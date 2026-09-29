@@ -57,7 +57,7 @@ class App:
         self._config_mtime = mtime
         try:
             self.pages = config.load_pages(self._config_path)
-        except (ValueError, OSError) as e:  # tomllib.TOMLDecodeError is a ValueError too
+        except (ValueError, OSError) as e:  # OSError: e.g. the file is briefly missing during a save
             log.error("could not load pages from config.toml, keeping the previous ones: %s", e)
             return
         self.page = min(self.page, len(self.pages) - 1)
