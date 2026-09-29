@@ -203,6 +203,16 @@ void drop_client()
     client = WiFiClient();
     client_active = false;
     out_len = 0;
+    /* The client may have stopped in the middle of a frame, and the STM32 parser would then wait for the
+     * rest of it and swallow the next client's HELLO as payload. One maximum-size frame of zeros
+     * completes any partial frame (which then fails its CRC); zeros contain no sync, so the parser is in
+     * step again when the HELLO arrives. ~6 ms at 921600 baud. */
+    static const uint8_t zeros[64] = {};
+    for (size_t left = kHeaderLen + kMaxPayload + kCrcLen; left;) {
+        const size_t n = std::min(left, sizeof zeros);
+        Serial.write(zeros, n);
+        left -= n;
+    }
 }
 
 void drop_pending()
