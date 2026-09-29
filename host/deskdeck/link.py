@@ -66,7 +66,13 @@ class Link:
                 raise LinkError(f"{self.failed.exception()} during HELLO "
                                 "(does the token in config.toml match bridge/include/secrets.h?)")
             raise LinkError("no HELLO_ACK")
-        self.ack = self._ack.result()
+        ack = self._ack.result()
+        if ack.proto != p.PROTO_VERSION:
+            # The MCU only logs a mismatch and carries on; frames it does not know would then be
+            # dropped as noise. Refuse the session so the log says what is wrong.
+            raise LinkError(f"protocol mismatch: the firmware speaks v{ack.proto}, this host v{p.PROTO_VERSION}; "
+                            "flash the firmware from the same checkout")
+        self.ack = ack
         self.sent = self.consumed = 0
         self._last_progress = time.monotonic()
         self._ready.set()
@@ -121,7 +127,7 @@ class Link:
         if len(pixels) != w * h * 2:
             raise ValueError(f"{w}×{h} needs {w * h * 2} B, got {len(pixels)} B")
         await self.send(p.blit_begin(x, y, w, h))
-        chunk = p.MAX_PAYLOAD  # even, so pixels are never split
+        chunk = min(p.MAX_PAYLOAD, self.ack.max_payload) & ~1  # even, so pixels are never split
         for i in range(0, len(pixels), chunk):
             await self.send(p.encode(p.BLIT_DATA, pixels[i:i + chunk]))
         await self.send(p.encode(p.BLIT_END))

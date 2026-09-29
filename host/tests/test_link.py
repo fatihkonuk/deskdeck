@@ -94,3 +94,43 @@ def test_hello_ack_opens_session():
         await link.close()
 
     asyncio.run(main())
+
+
+def ack_frame(**fields) -> bytes:
+    ack = p.HelloAck(**{"proto": 1, "firmware": 3, "width": 480, "height": 320, "window": 7673,
+                        "max_payload": 512, **fields})
+    return p.encode(p.HELLO_ACK, struct.pack("<BHHHHH", *astuple(ack)))
+
+
+def test_protocol_mismatch_is_refused():
+    async def main():
+        reader = asyncio.StreamReader()
+        reader.feed_data(ack_frame(proto=2))
+        with pytest.raises(LinkError, match="protocol mismatch: the firmware speaks v2, this host v1"):
+            await Link(reader, NullWriter()).open(b"token")
+
+    asyncio.run(main())
+
+
+class RecordingWriter(NullWriter):
+    def __init__(self) -> None:
+        self.data = bytearray()
+
+    def write(self, data: bytes) -> None:
+        self.data += data
+
+
+def test_blit_chunks_follow_the_advertised_max_payload():
+    async def main():
+        reader = asyncio.StreamReader()
+        reader.feed_data(ack_frame(max_payload=255))  # odd on purpose: pixels must not be split
+        writer = RecordingWriter()
+        link = Link(reader, writer)
+        await link.open(b"token")
+        writer.data.clear()
+        await link.blit(0, 0, 16, 16, bytes(512))
+        frames = p.Decoder().feed(bytes(writer.data))
+        assert [len(payload) for t, payload in frames if t == p.BLIT_DATA] == [254, 254, 4]
+        await link.close()
+
+    asyncio.run(main())
