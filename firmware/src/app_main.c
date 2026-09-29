@@ -11,7 +11,9 @@
 #include "touch.h"
 #include "ui.h"
 
-#define PING_TIMEOUT_MS     3000
+/* Longer than the host's credit stall timeout (STALL_TIMEOUT_S = 5 s in host/deskdeck/link.py): a Wi-Fi
+ * gap the host is willing to ride out must not end the session on this side first. */
+#define PING_TIMEOUT_MS     6000
 #define FRAMES_PER_POLL     8   /* give touch a turn in between */
 /* 5V rises slowly when USB is plugged in and the panel may become ready later than the STM32
  * (without this the image was garbled on cold boot until RESET was pressed). */
