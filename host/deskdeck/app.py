@@ -8,7 +8,9 @@ and the time label once a second. Button events run in their own tasks without b
 
 Pages come from [[pages]] in config.toml and are reloaded when the file changes. The host owns the
 current page: the MCU reports swipes and the host redraws the grid with the new page. Actions run on
-release (a press that turns into a swipe does nothing); volume buttons repeat while held."""
+release (a press that turns into a swipe does nothing); volume buttons repeat while held. The repeat
+also stops when the session ends and after VOLUME_REPEAT_MAX_S, so a RELEASE that never arrives (link
+drop, MCU reset, corrupted frame) cannot leave the volume stepping on its own."""
 import asyncio
 import logging
 import time
@@ -25,6 +27,7 @@ from .nowplaying import NowPlaying, Watcher
 log = logging.getLogger(__name__)
 
 VOLUME_REPEAT_S = 0.15
+VOLUME_REPEAT_MAX_S = 10.0  # a full 0-100 sweep takes ~4 s including osascript start-up
 TICK_S = 0.25
 
 
@@ -65,16 +68,21 @@ class App:
     async def session(self, link: Link) -> None:
         drawn: dict[str, object] = {}
         self.watcher.changed.set()  # draw everything on the first pass
-        while True:
-            self._reload_pages()
-            np = self.watcher.state
-            now = time.time()
-            await self._draw(link, np, now, drawn)
-            try:
-                await asyncio.wait_for(self.watcher.changed.wait(), TICK_S)
-            except TimeoutError:
-                pass
-            self.watcher.changed.clear()
+        try:
+            while True:
+                self._reload_pages()
+                np = self.watcher.state
+                now = time.time()
+                await self._draw(link, np, now, drawn)
+                try:
+                    await asyncio.wait_for(self.watcher.changed.wait(), TICK_S)
+                except TimeoutError:
+                    pass
+                self.watcher.changed.clear()
+        finally:
+            # A press held while the link dropped never gets its RELEASE; the MCU also forgets the
+            # touch when it goes offline or receives a new HELLO.
+            self._stop_repeat()
 
     async def _draw(self, link: Link, np: NowPlaying, now: float, drawn: dict) -> None:
         text_key = (np.title, np.artist, np.album)
@@ -174,9 +182,11 @@ class App:
             self._repeat = None
 
     async def _repeat_action(self, spec: config.ButtonSpec) -> None:
-        while True:
+        deadline = time.monotonic() + VOLUME_REPEAT_MAX_S
+        while time.monotonic() < deadline:
             await actions.perform(spec)
             await asyncio.sleep(VOLUME_REPEAT_S)
+        log.warning("%s: no release after %.0f s, repeat stopped", spec.name, VOLUME_REPEAT_MAX_S)
 
     def _spawn(self, coro) -> asyncio.Task:
         task = asyncio.create_task(coro)
