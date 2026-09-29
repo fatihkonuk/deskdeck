@@ -133,3 +133,10 @@ def test_out_of_range_numbers_read_as_zero():
     assert (w.state.duration_s, w.state.elapsed_s, w.state.rate) == (0.0, 0.0, 0.0)
     w._apply(line({"playbackRate": 1e308, "timestampEpochMicros": 1}, diff=True))
     assert w.state.elapsed_now() == 0.0  # overflows to infinity, read as 0
+
+
+def test_non_ascii_artwork_does_not_keep_the_previous_cover():
+    w = Watcher()
+    w._apply(line({"title": "First", "artworkData": art(b"cover-1")}))
+    w._apply(line({"title": "Second", "artworkData": "çok güzel"}))  # b64decode: ValueError, not binascii.Error
+    assert (w.state.title, w.state.artwork) == ("Second", None)
