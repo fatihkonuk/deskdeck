@@ -15,6 +15,8 @@
 #define PROTO_CRC_LEN     2
 #define PROTO_MAX_PAYLOAD 512
 #define PROTO_MAX_FRAME   (PROTO_HEADER_LEN + PROTO_MAX_PAYLOAD + PROTO_CRC_LEN)
+#define PROTO_MAX_TOKEN   64 /* HELLO token length limit, enforced by the host, the bridge and here */
+#define PROTO_MAX_HELLO   (PROTO_HEADER_LEN + 1 + PROTO_MAX_TOKEN + PROTO_CRC_LEN)
 
 enum {
     /* Host → MCU */
@@ -51,7 +53,7 @@ enum { BRIDGE_WIFI_CONNECTING = 1, BRIDGE_PORTAL = 2, BRIDGE_WAITING_MAC = 3 };
 static inline bool proto_header_ok(uint8_t type, uint16_t len)
 {
     switch (type) {
-    case MSG_HELLO:      return len >= 1 && len <= PROTO_MAX_PAYLOAD;
+    case MSG_HELLO:      return len >= 1 && len <= 1 + PROTO_MAX_TOKEN; /* version + token; empty when wired */
     case MSG_BLIT_BEGIN: return len == 8;
     case MSG_BLIT_DATA:  return len > 0 && len <= PROTO_MAX_PAYLOAD && (len & 1u) == 0;
     case MSG_BLIT_END:   return len == 0;

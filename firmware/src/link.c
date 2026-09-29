@@ -17,6 +17,10 @@
 #define LOG_BURST           4u
 
 _Static_assert((LINK_RX_BUF_SIZE & RX_MASK) == 0, "LINK_RX_BUF_SIZE must be a power of two");
+/* HELLO is consumed only after its handler has sent HELLO_ACK and re-initialised the display, and the
+ * host starts filling the window as soon as the ACK arrives. The buffer must hold both, with at least one
+ * byte to spare: a completely full ring buffer reads as empty. */
+_Static_assert(PROTO_MAX_HELLO + LINK_WINDOW_BYTES < LINK_RX_BUF_SIZE, "window too large for the buffer");
 
 static uint8_t s_rx[LINK_RX_BUF_SIZE];
 static uint32_t s_rd;

@@ -48,6 +48,9 @@ constexpr uint32_t kRoamRetryMs = 300000; /* if nothing better: a scan interrupt
 constexpr uint8_t kSync0 = 0xA5, kSync1 = 0x5A;
 constexpr uint8_t kMsgHello = 0x01, kMsgStatus = 0x40;
 constexpr size_t kHeaderLen = 5, kCrcLen = 2, kMaxPayload = 512;
+constexpr size_t kMaxToken = 64; /* PROTO_MAX_TOKEN in firmware/include/proto.h */
+static_assert(sizeof(DESKDECK_TOKEN) - 1 >= 1 && sizeof(DESKDECK_TOKEN) - 1 <= kMaxToken,
+              "DESKDECK_TOKEN in secrets.h must be 1 to 64 characters");
 /* Write timeout towards the host. With the default 5000 ms, when lwIP cannot queue a packet write()
  * blocks for seconds waiting for an ACK, and with the loop stalled the host → STM32 direction stops too. */
 constexpr uint32_t kTcpWriteTimeoutMs = 10;
@@ -244,7 +247,7 @@ int check_hello()
         return -1;
     }
     const size_t len = pending_buf[3] | (pending_buf[4] << 8);
-    if (len < 1 || len > kMaxPayload) {
+    if (len < 2 || len > 1 + kMaxToken) {
         return -1;
     }
     const size_t total = kHeaderLen + len + kCrcLen;
