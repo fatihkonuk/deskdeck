@@ -129,6 +129,13 @@ void link_poll(link_handler_t handler, uint32_t max_frames)
     }
 }
 
+void link_discard(void)
+{
+    const uint32_t n = rx_available();
+    rx_consume(n);
+    g_link_stats.skipped += n;
+}
+
 void link_credit_tick(uint32_t now_ms)
 {
     const uint32_t consumed = g_link_stats.consumed;
