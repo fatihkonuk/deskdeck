@@ -98,7 +98,7 @@ void link_poll(link_handler_t handler, uint32_t max_frames)
 
         const uint8_t type = rx_at(2);
         const uint16_t len = (uint16_t)(rx_at(3) | (rx_at(4) << 8));
-        if (len > PROTO_MAX_PAYLOAD) {
+        if (!proto_header_ok(type, len)) {
             rx_consume(1);
             g_link_stats.bad_len++;
             continue;

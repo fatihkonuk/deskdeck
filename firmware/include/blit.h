@@ -14,8 +14,5 @@
 const char *blit_begin(uint16_t x, uint16_t y, uint16_t w, uint16_t h);
 const char *blit_data(const link_span_t *data);
 const char *blit_end(void);
-/* Marks the current blit as failed with `reason` (e.g. a malformed BEGIN frame) and returns it, so the
- * frames that follow are handled like those of a rejected blit. */
-const char *blit_abort(const char *reason);
 /* Forgets any blit in progress without reporting it (new session). */
 void blit_reset(void);

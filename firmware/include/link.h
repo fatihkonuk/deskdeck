@@ -44,7 +44,7 @@ typedef void (*link_handler_t)(uint8_t type, const link_span_t *payload);
 typedef struct {
     uint32_t frames;
     uint32_t crc_errors;
-    uint32_t bad_len;
+    uint32_t bad_len; /* headers rejected by proto_header_ok (unknown type or wrong length) */
     uint32_t skipped; /* bytes skipped while hunting for sync */
     uint32_t consumed; /* bytes consumed since HELLO (the CREDIT value) */
 } link_stats_t;
