@@ -11,9 +11,11 @@
 #include "touch.h"
 #include "ui.h"
 
-/* Longer than the host's credit stall timeout (STALL_TIMEOUT_S = 5 s in host/deskdeck/link.py): a Wi-Fi
- * gap the host is willing to ride out must not end the session on this side first. */
-#define PING_TIMEOUT_MS     6000
+/* Must outlast the host's stall detection, or a Wi-Fi gap the host is willing to ride out ends the session
+ * on this side first. The host gives up 5 s (STALL_TIMEOUT_S in host/deskdeck/link.py) after the last
+ * PING it sent with nothing in flight, which can be up to 1 s after the last frame that reached us, and
+ * it checks once a second: up to ~7 s after our last frame. 8 s leaves a margin. */
+#define PING_TIMEOUT_MS     8000
 #define FRAMES_PER_POLL     8   /* give touch a turn in between */
 /* 5V rises slowly when USB is plugged in and the panel may become ready later than the STM32
  * (without this the image was garbled on cold boot until RESET was pressed). */
@@ -33,8 +35,7 @@ static void log_if(const char *err)
  * the shared 5V rail and corrupt the panel's settings; the host's first connection arrives after that. */
 static void display_init(void)
 {
-    lcd_init(MADCTL_MV | MADCTL_BGR, false);
-    lcd_set_rotation(1);
+    lcd_init(MADCTL_MV | MADCTL_BGR, false); /* landscape, 480×320 (rotation 1 in lcd_set_rotation) */
 }
 
 static void send_hello_ack(void)
