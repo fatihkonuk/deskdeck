@@ -63,6 +63,11 @@ press.
 Frames that arrive before HELLO are silently dropped. The host notices this as "CREDIT is not
 advancing" (see below) and sends HELLO again. The same mechanism recovers the session after an MCU reset.
 
+A blit the MCU cannot carry out is reported with a single LOG: rectangle off screen, BLIT_DATA without
+BLIT_BEGIN (e.g. BEGIN lost to a CRC error), odd length, or more data than the rectangle. The remaining
+BLIT_DATA and the BLIT_END of that blit are then dropped silently. A blit that is still short of pixels at
+BLIT_END is reported there.
+
 ## Flow control (byte-based credit)
 
 - The MCU receives the UART through DMA into an 8192 B circular buffer. The **window** in HELLO_ACK is
