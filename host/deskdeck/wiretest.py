@@ -17,8 +17,9 @@ from PIL import Image, ImageDraw, ImageOps
 from . import config, layout
 from . import protocol as p
 from .connect import run_forever
-from .image import font, rgb565, to_rgb565
+from .image import to_rgb565
 from .link import Link, LinkError
+from .render import font  # the same fonts as the service
 
 BAUD = 921600
 BG = (0, 0, 0)
