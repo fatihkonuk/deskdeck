@@ -11,6 +11,10 @@
 /* Repeat even when unchanged, so a lost final CREDIT is made up for. 50 ms was tried (hoping for
  * faster retransmits): the more packets the ESP sent, the worse the latency got. */
 #define CREDIT_REPEAT_MS    500u
+/* LOG rate limit: every LOG busy-waits on the UART, so a burst of bad frames (e.g. an unknown type
+ * from a newer host) must not stall frame handling. The excess is counted and reported once. */
+#define LOG_WINDOW_MS       1000u
+#define LOG_BURST           4u
 
 _Static_assert((LINK_RX_BUF_SIZE & RX_MASK) == 0, "LINK_RX_BUF_SIZE must be a power of two");
 
@@ -18,6 +22,9 @@ static uint8_t s_rx[LINK_RX_BUF_SIZE];
 static uint32_t s_rd;
 static uint32_t s_reported;
 static uint32_t s_last_report_ms;
+static uint32_t s_log_window_ms;   /* start of the current LOG window */
+static uint32_t s_log_sent;        /* LOGs sent in the current window */
+static uint32_t s_log_suppressed;  /* LOGs dropped in the current window */
 
 __attribute__((used)) volatile link_stats_t g_link_stats;
 
@@ -156,7 +163,48 @@ void link_send(uint8_t type, const void *payload, uint16_t len)
     tx_bytes(trailer, sizeof trailer);
 }
 
+/* Writes v in decimal to out (at least 10 bytes); returns the number of characters. */
+static uint16_t fmt_u32(char *out, uint32_t v)
+{
+    char tmp[10];
+    uint16_t n = 0;
+    do {
+        tmp[n++] = (char)('0' + v % 10u);
+        v /= 10u;
+    } while (v);
+    for (uint16_t i = 0; i < n; i++) {
+        out[i] = tmp[n - 1u - i];
+    }
+    return n;
+}
+
+void link_log_tick(uint32_t now_ms)
+{
+    if (now_ms - s_log_window_ms < LOG_WINDOW_MS) {
+        return;
+    }
+    if (s_log_suppressed) {
+        static const char prefix[] = "log: ", suffix[] = " messages suppressed";
+        char msg[sizeof prefix - 1u + 10u + sizeof suffix - 1u];
+        uint16_t n = sizeof prefix - 1u;
+        memcpy(msg, prefix, n);
+        n += fmt_u32(msg + n, s_log_suppressed);
+        memcpy(msg + n, suffix, sizeof suffix - 1u);
+        n += sizeof suffix - 1u;
+        link_send(MSG_LOG, msg, n);
+    }
+    s_log_window_ms = now_ms;
+    s_log_sent = 0;
+    s_log_suppressed = 0;
+}
+
 void link_log(const char *text)
 {
+    link_log_tick(HAL_GetTick());
+    if (s_log_sent >= LOG_BURST) {
+        s_log_suppressed++;
+        return;
+    }
+    s_log_sent++;
     link_send(MSG_LOG, text, (uint16_t)strlen(text));
 }

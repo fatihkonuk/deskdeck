@@ -141,6 +141,7 @@ int main(void)
             link_credit_tick(now);
         }
         ui_tick(now);
+        link_log_tick(now);
 
         if (now - last_blink >= (s_connected ? 100u : 500u)) {
             last_blink = now;

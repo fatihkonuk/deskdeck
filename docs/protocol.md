@@ -70,6 +70,9 @@ that is still short of pixels at BLIT_END is reported there, and so is a BLIT_EN
 progress. Frames carry no sequence number, so if a blit's END *and* the next blit's BEGIN are both lost,
 the second blit cannot be told apart from the first and goes unreported.
 
+The MCU sends at most 4 LOG frames per second, because each one is written to the UART with a busy
+wait. Any excess is dropped and reported once the second is over as `log: N messages suppressed`.
+
 ## Flow control (byte-based credit)
 
 - The MCU receives the UART through DMA into an 8192 B circular buffer. The **window** in HELLO_ACK is
