@@ -64,16 +64,25 @@ async def run_wifi(args: argparse.Namespace) -> None:
     cfg = config.load()
     print(f"Wi-Fi: {cfg.ip or cfg.host}:{cfg.port}", flush=True)
 
+    drawn = False
+
     async def session(link: Link) -> None:
+        nonlocal drawn
         print_ack(link.ack)
         await draw_test_screen(link, args)
+        drawn = True
         await asyncio.Event().wait()  # until the link drops
 
     def on_event(ev: object) -> None:
         print(f"{time.strftime('%H:%M:%S')} {ev}", flush=True)
 
     # a setup error (e.g. a missing --image) should fail the test, not be retried until --seconds runs out
-    await asyncio.wait_for(run_forever(cfg, session, on_event, retry_unexpected=False), args.seconds)
+    try:
+        await asyncio.wait_for(run_forever(cfg, session, on_event, retry_unexpected=False), args.seconds)
+    except TimeoutError:
+        if not drawn:  # run_forever kept retrying the connection: that is a failed test, not a pass
+            raise LinkError(f"the test screen was not drawn within {args.seconds:.0f} s (see the log above)") from None
+        raise
 
 
 async def run(args: argparse.Namespace) -> None:
