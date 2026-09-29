@@ -42,18 +42,20 @@ DEFAULT_PAGES: tuple[Page, ...] = ((
 
 
 def _read(path: Path) -> dict:
-    if not path.exists():
-        raise SystemExit(f"{path} not found. Copy config.toml.example and fill in the token.")
     return tomllib.loads(path.read_text())
 
 
 def load(path: Path = DEFAULT_PATH) -> DeviceConfig:
+    if not path.exists():
+        raise SystemExit(f"{path} not found. Copy config.toml.example and fill in the token.")
     dev = _read(path)["device"]
     return DeviceConfig(host=dev.get("host", "deskdeck.local"), port=int(dev.get("port", 7788)),
                         token=dev["token"], ip=dev.get("ip") or None)
 
 
-def _button(raw: dict, where: str) -> ButtonSpec | None:
+def _button(raw: object, where: str) -> ButtonSpec | None:
+    if not isinstance(raw, dict):
+        raise ValueError(f"{where}: must be a table, e.g. {{ app = \"Safari\" }} ({{}} for an empty cell)")
     if not raw:
         return None
     found = [k for k in ACTIONS if k in raw]
@@ -72,13 +74,20 @@ def _button(raw: dict, where: str) -> ButtonSpec | None:
 
 
 def load_pages(path: Path = DEFAULT_PATH) -> tuple[Page, ...]:
-    """Reads the [[pages]] tables. Raises ValueError naming the page/button on errors."""
+    """Reads the [[pages]] tables. Raises ValueError naming the page/button if the content is invalid
+    (tomllib.TOMLDecodeError is a ValueError too) and OSError if the file cannot be read."""
     pages = _read(path).get("pages")
     if not pages:
         return DEFAULT_PAGES
+    if not isinstance(pages, list):
+        raise ValueError("'pages' must be an array of tables: write [[pages]], not [pages]")
     out = []
     for pi, page in enumerate(pages):
+        if not isinstance(page, dict):
+            raise ValueError(f"page {pi + 1}: must be a table")
         buttons = page.get("buttons", [])
+        if not isinstance(buttons, list):
+            raise ValueError(f"page {pi + 1}: 'buttons' must be an array")
         if len(buttons) > layout.BUTTON_COUNT:
             raise ValueError(f"page {pi + 1}: at most {layout.BUTTON_COUNT} buttons")
         specs = [_button(b, f"page {pi + 1}, button {bi + 1}") for bi, b in enumerate(buttons)]
