@@ -85,6 +85,10 @@ reconnect with backoff (1 → 10 s).
 
 ## macOS host
 
+**`peer closed the connection during HELLO`.** The bridge closes any connection whose `HELLO` carries
+the wrong token. Make sure `token` in `host/config.toml` matches `DESKDECK_TOKEN` in
+`bridge/include/secrets.h`, and re-flash the bridge after changing it.
+
 **The launchd service hangs silently (empty log).** If the project lives in a TCC-protected folder
 (Desktop, Documents, Downloads), Python started by launchd blocks forever on a hidden permission
 prompt when it opens files there. Keep the project somewhere like `~/Developer`. `launchd.sh` writes
