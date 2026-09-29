@@ -50,3 +50,13 @@ def test_artwork_is_decoded_only_when_it_changes(monkeypatch):
 
     w._apply(line({"artworkData": None}, diff=True))
     assert (w.state.artwork, w.state.artwork_key) == (None, "")
+
+
+def test_bad_artwork_does_not_freeze_updates(caplog):
+    w = Watcher()
+    w._apply(line({"title": "Song", "playing": True, "artworkData": "not base64!"}))
+    assert (w.state.title, w.state.artwork) == ("Song", None)
+    w._apply(line({"playing": False}, diff=True))
+    w._apply(line({"title": "Next"}, diff=True))
+    assert (w.state.title, w.state.playing) == ("Next", False)
+    assert caplog.text.count("could not decode artwork") == 1
