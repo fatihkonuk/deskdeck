@@ -62,7 +62,8 @@ press.
 2. The MCU sends HELLO_ACK, re-initialises the display, clears the screen and draws the button frames.
    It resets the consumed-byte counter; the bytes of HELLO itself are not counted.
 3. The host redraws the whole screen (cover, text, button icons, PROGRESS).
-4. The host sends PING once a second. If the MCU receives no valid frame for **3 s** it shows the
+4. The host sends PING once a second. If the MCU receives no valid frame for **6 s** (longer than the
+   host's 5 s credit stall timeout, so a Wi-Fi gap the host rides out does not end the session) it shows the
    "not connected" screen, ignores everything until the next HELLO and stops sending CREDIT.
 5. The MCU sends `LOG "boot"` at power-up.
 
