@@ -164,6 +164,16 @@ class App:
             log.info("page %d/%d", self.page + 1, len(self.pages))
             self.watcher.changed.set()  # wake the draw loop right away
             return
+        # _repeat marks the current touch as a long press until the touch ends. It is handled before the
+        # button lookup: a config reload may have emptied the cell while the finger was down.
+        if ev.event == p.PRESS or ev.event == p.CANCEL:
+            # PRESS starts a new touch: anything left from the previous one (a RELEASE that never
+            # arrived, a repeat stopped by its time limit) is over.
+            self._stop_repeat()
+            return
+        if ev.event == p.RELEASE and self._repeat:  # the long press already repeated the action
+            self._stop_repeat()
+            return
         spec = self.pages[self.page][ev.index] if ev.index < layout.BUTTON_COUNT else None
         if spec is None:
             return
@@ -171,13 +181,8 @@ class App:
             self._stop_repeat()
             self._repeat = self._spawn(self._repeat_action(spec))
         elif ev.event == p.RELEASE:
-            if self._repeat:  # the long press already repeated the action
-                self._stop_repeat()
-            else:
-                log.info("button: %s", spec.name)
-                self._spawn(actions.perform(spec))
-        elif ev.event == p.CANCEL:
-            self._stop_repeat()
+            log.info("button: %s", spec.name)
+            self._spawn(actions.perform(spec))
 
     def _stop_repeat(self) -> None:
         if self._repeat:
@@ -194,8 +199,13 @@ class App:
     def _spawn(self, coro) -> asyncio.Task:
         task = asyncio.create_task(coro)
         self._tasks.add(task)
-        task.add_done_callback(self._tasks.discard)
+        task.add_done_callback(self._task_done)
         return task
+
+    def _task_done(self, task: asyncio.Task) -> None:
+        self._tasks.discard(task)
+        if not task.cancelled() and task.exception():  # e.g. media-control is not installed
+            log.error("action failed", exc_info=task.exception())
 
 
 def _is_playpause(spec: config.ButtonSpec) -> bool:

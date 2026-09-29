@@ -174,3 +174,56 @@ def test_progress_carries_position_at_send_time(config_path, monkeypatch):
         assert elapsed_ms >= (10.0 + blit_delay) * 1000
 
     asyncio.run(main())
+
+
+def test_tap_after_capped_repeat_runs_its_action(config_path, performed, monkeypatch):
+    """The RELEASE of a long press is lost, the repeat stops at its time limit, then another button is
+    tapped: that tap must run its action, not be taken for the end of the long press."""
+    monkeypatch.setattr(app_module, "VOLUME_REPEAT_MAX_S", 0.05)
+
+    async def main():
+        app = make_app(config_path)
+        vol = vol_up_index(app)
+        other = next(i for i, spec in enumerate(app.pages[0]) if spec and spec.arg not in ("vol_up", "vol_down"))
+        app.on_event(p.Button(0, vol, p.PRESS))
+        app.on_event(p.Button(0, vol, p.LONG))
+        await asyncio.sleep(0.2)  # RELEASE lost; the cap stops the repeat
+        performed.clear()
+        app.on_event(p.Button(0, other, p.PRESS))
+        app.on_event(p.Button(0, other, p.RELEASE))
+        await asyncio.sleep(0.02)
+        assert performed == [app.pages[0][other].arg]
+
+    asyncio.run(main())
+
+
+def test_release_stops_repeat_when_cell_was_emptied(config_path, performed):
+    async def main():
+        app = make_app(config_path)
+        vol = vol_up_index(app)
+        app.on_event(p.Button(0, vol, p.PRESS))
+        app.on_event(p.Button(0, vol, p.LONG))
+        await asyncio.sleep(0.03)
+        app.pages = (tuple(None for _ in app.pages[0]),)  # config reload emptied the page
+        app.on_event(p.Button(0, vol, p.RELEASE))
+        assert app._repeat is None
+        count = len(performed)
+        await asyncio.sleep(0.05)
+        assert len(performed) == count
+
+    asyncio.run(main())
+
+
+def test_failed_action_is_logged(config_path, monkeypatch, caplog):
+    async def perform(spec):
+        raise FileNotFoundError("media-control")
+
+    monkeypatch.setattr(app_module.actions, "perform", perform)
+
+    async def main():
+        app = make_app(config_path)
+        app.on_event(p.Button(0, vol_up_index(app), p.RELEASE))
+        await asyncio.sleep(0.02)
+
+    asyncio.run(main())
+    assert "action failed" in caplog.text
