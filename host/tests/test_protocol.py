@@ -1,3 +1,5 @@
+import struct
+
 from deskdeck import protocol as p
 
 
@@ -21,3 +23,10 @@ def test_decoder_drops_frame_with_bad_crc():
     bad = bytearray(p.encode(p.LOG, b"hello"))
     bad[-1] ^= 0xFF
     assert p.Decoder().feed(bytes(bad) + p.encode(p.PING)) == [(p.PING, b"")]
+
+
+def test_progress_clamps_to_u32():
+    for elapsed, duration in ((-5, -1000), (2**40, 2**33)):
+        ((t, payload),) = p.Decoder().feed(p.progress(elapsed, duration, True))
+        assert t == p.PROGRESS
+        assert payload[:8] == struct.pack("<II", max(0, min(elapsed, 2**32 - 1)), max(0, min(duration, 2**32 - 1)))
