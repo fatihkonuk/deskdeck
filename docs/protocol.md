@@ -64,9 +64,10 @@ press.
    field differs from its own version, the host refuses the session and logs both versions; it
    also splits BLIT_DATA at the `max payload` the MCU announces.
 3. The host redraws the whole screen (cover, text, button icons, PROGRESS).
-4. The host sends PING once a second. If the MCU receives no valid frame for **6 s** (longer than the
-   host's 5 s credit stall timeout, so a Wi-Fi gap the host rides out does not end the session) it shows the
-   "not connected" screen, ignores everything until the next HELLO and stops sending CREDIT.
+4. The host sends PING once a second. If the MCU receives no valid frame for **8 s** it shows the
+   "not connected" screen, ignores everything until the next HELLO and stops sending CREDIT. This must
+   outlast the host's stall detection: the host gives up 5 s after the last PING it sent with nothing in
+   flight, up to 1 s after the MCU's last frame, and checks once a second, so up to ~7 s in all.
 5. The MCU sends `LOG "boot"` at power-up.
 
 Frames that arrive before HELLO are silently dropped, and no CREDIT is sent for them. The host notices
