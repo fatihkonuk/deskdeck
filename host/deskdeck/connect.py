@@ -115,10 +115,11 @@ async def open_link(cfg: DeviceConfig) -> Link:
 
 
 async def run_forever(cfg: DeviceConfig, session: Callable[[Link], Awaitable[None]],
-                      on_event: Callable[[object], None] = print) -> None:
+                      on_event: Callable[[object], None] = print, *, retry_unexpected: bool = True) -> None:
     """Connect, then run the session(link) task (redraws the whole screen, then sends updates)
     alongside event dispatch. If the link drops or the session fails for any reason, wait and try
     again: under launchd an exception escaping here would only turn into a crash-and-restart loop.
+    With retry_unexpected=False (test tools), errors other than LinkError propagate instead.
     on_event must return quickly (spawn long work as its own task) so buttons keep arriving during blits."""
     backoff = BACKOFF_MIN_S
     while True:
@@ -143,6 +144,8 @@ async def run_forever(cfg: DeviceConfig, session: Callable[[Link], Awaitable[Non
         except LinkError as e:
             log.warning("link: %s", e)
         except Exception:  # a bug in one session must not stop the service
+            if not retry_unexpected:
+                raise
             log.exception("session failed")
         finally:
             if sess and not sess.done():
