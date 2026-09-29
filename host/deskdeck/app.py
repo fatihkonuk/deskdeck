@@ -100,7 +100,9 @@ class App:
         await self._draw_grid(link, np, drawn)
         progress_key = (np.playing, np.duration_s, np.elapsed_s, np.timestamp)
         if drawn.get("progress") != progress_key:
-            await link.send(p.progress(int(np.elapsed_now(now) * 1000), int(np.duration_s * 1000), np.playing))
+            # Position at send time, not `now`: after a song change the blits above wait on credit for
+            # up to ~1 s, and the MCU advances the bar from the moment PROGRESS arrives.
+            await link.send(p.progress(int(np.elapsed_now() * 1000), int(np.duration_s * 1000), np.playing))
             drawn["progress"] = progress_key
         label = render.time_label(np, now)
         if drawn.get("time") != label:

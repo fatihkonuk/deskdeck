@@ -1,12 +1,15 @@
 import asyncio
 import os
 import shutil
+import struct
+import time
 from pathlib import Path
 
 import pytest
 
 from deskdeck import app as app_module
 from deskdeck import protocol as p
+from deskdeck.nowplaying import NowPlaying
 
 EXAMPLE = Path(__file__).resolve().parent.parent / "config.toml.example"
 
@@ -132,5 +135,42 @@ def test_reload_applies_valid_config(config_path):
         app._reload_pages()
         assert len(app.pages) == 1
         assert app.page == 0
+
+    asyncio.run(main())
+
+
+def test_progress_carries_position_at_send_time(config_path, monkeypatch):
+    """After a song change the cover and grid blits wait on credit; the position sent in PROGRESS
+    must include that delay, since the MCU advances the bar from the moment the frame arrives."""
+    blit_delay = 0.3
+
+    async def slow_blit(link, rect, img):
+        await asyncio.sleep(blit_delay)
+
+    async def no_grid(*_):
+        pass
+
+    monkeypatch.setattr(app_module, "blit", slow_blit)
+    monkeypatch.setattr(app_module.render, "cover", lambda np: None)
+    monkeypatch.setattr(app_module.render, "time_image", lambda label: None)
+
+    class RecordingLink:
+        def __init__(self):
+            self.frames: list[bytes] = []
+
+        async def send(self, frame):
+            self.frames.append(frame)
+
+    async def main():
+        app = app_module.App(config_path)
+        app._draw_grid = no_grid
+        link = RecordingLink()
+        np = NowPlaying(title="Song", duration_s=200.0, elapsed_s=10.0, timestamp=time.time(), rate=1.0,
+                        playing=True)
+        drawn = {"text": (np.title, np.artist, np.album)}  # text unchanged; the cover still gets blitted
+        await app._draw(link, np, time.time(), drawn)
+        ((_, payload),) = [f for f in p.Decoder().feed(b"".join(link.frames)) if f[0] == p.PROGRESS]
+        (elapsed_ms,) = struct.unpack_from("<I", payload)
+        assert elapsed_ms >= (10.0 + blit_delay) * 1000
 
     asyncio.run(main())
