@@ -98,3 +98,11 @@ def test_current_page_is_always_visible(monkeypatch, count):
         img = render.page_dots(count, current).convert("L")
         assert img.size == tuple(render.layout.PAGE_DOTS[2:])
         assert img.getextrema()[1] > 200, (count, current)
+
+
+def test_oversized_icon_file_falls_back(tmp_path, monkeypatch):
+    """DecompressionBombError is not an OSError; it must not escape into the session."""
+    path = tmp_path / "icon.png"
+    path.write_bytes(png(64))
+    monkeypatch.setattr(render.Image, "MAX_IMAGE_PIXELS", 100)  # 64×64 is now "too large" (> 2× limit)
+    assert render._graphic(ButtonSpec("open", "/", "Icon", str(path)), 44) is None

@@ -227,20 +227,31 @@ def _symbol(text: str) -> Image.Image | None:
 
 
 def _graphic(spec: ButtonSpec, size: int) -> Image.Image | None:
+    """The button's icon scaled to fit `size`, or None to draw the label only. Any image the icon file
+    cannot become is logged and falls back to the label; only IconUnavailable (try again later)
+    propagates."""
     try:
-        if spec.icon:
-            p = Path(spec.icon).expanduser()
-            src = Image.open(p) if p.is_file() else _symbol(spec.icon)
-        elif spec.action == "app":
-            src = app_icon(spec.arg)
-        else:
-            return None
-        if src is None:
-            return None
-        src = src.convert("RGBA")  # Image.open() is lazy: a truncated or corrupt file fails here
-    except OSError as e:
-        log.warning("could not load icon for %s: %s", spec.name, e)
+        return _load_graphic(spec, size)
+    except IconUnavailable:
+        raise
+    except Exception as e:  # noqa: BLE001
+        # Pillow raises many types besides OSError (DecompressionBombError, ValueError, ...), and one
+        # escaping here would fail the session and reconnect in a loop while this page is shown.
+        log.warning("could not load icon for %s: %s: %s", spec.name, type(e).__name__, e)
         return None
+
+
+def _load_graphic(spec: ButtonSpec, size: int) -> Image.Image | None:
+    if spec.icon:
+        p = Path(spec.icon).expanduser()
+        src = Image.open(p) if p.is_file() else _symbol(spec.icon)
+    elif spec.action == "app":
+        src = app_icon(spec.arg)
+    else:
+        return None
+    if src is None:
+        return None
+    src = src.convert("RGBA")  # Image.open() is lazy: a truncated or corrupt file fails here
     bbox = src.getchannel("A").getbbox()
     if bbox is None:
         return None
