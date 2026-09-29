@@ -152,3 +152,15 @@ def test_fixed_ip_does_not_fall_back_to_mdns(monkeypatch, tmp_path):
         asyncio.run(connect.open_link(cfg))
     assert opened == ["192.0.2.9"]
     assert not (tmp_path / "device_ip").exists()
+
+
+def test_unexpected_error_propagates_when_retry_is_off(monkeypatch):
+    async def open_link(cfg):
+        return FakeLink()
+
+    async def session(link):
+        raise FileNotFoundError("missing.png")
+
+    monkeypatch.setattr(connect, "open_link", open_link)
+    with pytest.raises(FileNotFoundError):
+        asyncio.run(connect.run_forever(CFG, session, retry_unexpected=False))

@@ -72,7 +72,8 @@ async def run_wifi(args: argparse.Namespace) -> None:
     def on_event(ev: object) -> None:
         print(f"{time.strftime('%H:%M:%S')} {ev}", flush=True)
 
-    await asyncio.wait_for(run_forever(cfg, session, on_event), args.seconds)
+    # a setup error (e.g. a missing --image) should fail the test, not be retried until --seconds runs out
+    await asyncio.wait_for(run_forever(cfg, session, on_event, retry_unexpected=False), args.seconds)
 
 
 async def run(args: argparse.Namespace) -> None:
