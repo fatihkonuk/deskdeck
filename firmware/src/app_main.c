@@ -129,6 +129,7 @@ int main(void)
 
         if (s_connected && now - s_last_rx_ms > PING_TIMEOUT_MS) {
             s_connected = false;
+            link_discard();
             ui_show_offline(UI_OFFLINE_LINK_LOST);
         }
         if (s_connected) {

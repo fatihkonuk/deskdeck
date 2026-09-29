@@ -57,6 +57,11 @@ void link_init(void);
  * after a HELLO frame. */
 void link_poll(link_handler_t handler, uint32_t max_frames);
 
+/* Drops everything received so far. For when the session has timed out: whatever is left is stale, and a
+ * frame that was cut off (the bridge reset mid-frame, or a wired host stopped) would otherwise keep the
+ * parser waiting for its missing bytes and swallow the frames that follow. */
+void link_discard(void);
+
 /* Sends CREDIT when the consumed count changed and either 2 KB accumulated or 50 ms passed; if it
  * did not change, repeats the same value every 500 ms (harmless because it is cumulative, and it
  * makes up for a lost one). Call only while connected: staying silent otherwise lets the host

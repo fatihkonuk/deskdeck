@@ -23,6 +23,9 @@ A5 5A | type (1) | length (2, LE) | payload (0..512) | CRC (2, LE)
 - When a client disconnects or is replaced, the bridge writes 519 zero bytes (one maximum-size frame)
   to the UART. A frame that was cut off mid-way is then completed with zeros, fails its CRC, and the
   parser is back in sync before the next client's HELLO arrives, instead of swallowing it.
+- When the session times out (see Session), the MCU also discards whatever is in its receive buffer.
+  That covers the cases the bridge cannot: the bridge itself resetting in the middle of a frame, or a
+  wired host that stopped mid-frame.
 
 ## Messages
 
