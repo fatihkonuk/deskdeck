@@ -43,16 +43,26 @@ class NowPlaying:
         return max(0.0, min(e, self.duration_s)) if self.duration_s else max(0.0, e)
 
 
+def _text(v: object) -> str:
+    return v if isinstance(v, str) else ""
+
+
+def _number(v: object) -> float:
+    """A field of the wrong type reads as 0 instead of raising: it stays in the merged payload, so an
+    exception would repeat on every later update and freeze the state."""
+    return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0.0
+
+
 def _to_state(p: dict, artwork: bytes | None, artwork_key: str) -> NowPlaying:
     return NowPlaying(
-        title=p.get("title") or "",
-        artist=p.get("artist") or "",
-        album=p.get("album") or "",
-        duration_s=(p.get("durationMicros") or 0) / 1e6,
-        elapsed_s=(p.get("elapsedTimeMicros") or 0) / 1e6,
-        timestamp=(p.get("timestampEpochMicros") or 0) / 1e6 or time.time(),
-        rate=float(p.get("playbackRate") or 0.0),
-        playing=bool(p.get("playing")),
+        title=_text(p.get("title")),
+        artist=_text(p.get("artist")),
+        album=_text(p.get("album")),
+        duration_s=_number(p.get("durationMicros")) / 1e6,
+        elapsed_s=_number(p.get("elapsedTimeMicros")) / 1e6,
+        timestamp=_number(p.get("timestampEpochMicros")) / 1e6 or time.time(),
+        rate=_number(p.get("playbackRate")),
+        playing=p.get("playing") is True,
         artwork=artwork,
         artwork_key=artwork_key,
     )
@@ -71,9 +81,13 @@ class Watcher:
 
     def _apply(self, line: bytes) -> None:
         msg = json.loads(line)
+        if not isinstance(msg, dict):
+            raise TypeError(f"expected a JSON object, got {type(msg).__name__}")
         if msg.get("type") != "data":
             return
         payload = msg.get("payload") or {}
+        if not isinstance(payload, dict):
+            raise TypeError(f"expected an object as payload, got {type(payload).__name__}")
         if msg.get("diff"):
             for k, v in payload.items():
                 if v is None:
@@ -104,24 +118,35 @@ class Watcher:
         return self._artwork
 
     async def run(self) -> None:
+        """Runs media-control for as long as the service runs. Nothing escapes this loop but
+        cancellation: nobody awaits the task, so an escaping error would silently freeze the screen
+        on the last track."""
         while True:
             try:
-                proc = await asyncio.create_subprocess_exec(
-                    *COMMAND, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, limit=LINE_LIMIT)
+                await self._run_once()
             except FileNotFoundError:
                 log.error("media-control not found: brew install ungive/media-control/media-control")
                 await asyncio.sleep(30)
                 continue
-            try:
-                assert proc.stdout
-                while line := await proc.stdout.readline():
-                    try:
-                        self._apply(line)
-                    except (ValueError, TypeError) as e:
-                        log.warning("could not parse media-control line: %s", e)
-            finally:
-                if proc.returncode is None:
-                    proc.kill()
-                await proc.wait()
-            log.warning("media-control exited (code %s), restarting in %.0f s", proc.returncode, RESTART_DELAY_S)
+            except Exception:  # e.g. a line over LINE_LIMIT, or a spawn failure
+                log.exception("media-control watcher failed")
             await asyncio.sleep(RESTART_DELAY_S)
+
+    async def _run_once(self) -> None:
+        proc = await asyncio.create_subprocess_exec(
+            *COMMAND, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, limit=LINE_LIMIT)
+        try:
+            assert proc.stdout
+            while line := await proc.stdout.readline():
+                try:
+                    self._apply(line)
+                except (ValueError, TypeError) as e:
+                    log.warning("could not parse media-control line: %s", e)
+        finally:
+            if proc.returncode is None:
+                proc.kill()
+            # Not wait(): it only returns once every pipe is closed, and after a line over LINE_LIMIT
+            # the reader has paused the stdout pipe, so it would never close and the watcher would hang.
+            # communicate() reads (and discards) what is left, then waits.
+            await proc.communicate()
+        log.warning("media-control exited (code %s), restarting in %.0f s", proc.returncode, RESTART_DELAY_S)
