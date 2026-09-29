@@ -7,6 +7,7 @@ from . import layout
 
 DEFAULT_PATH = Path(__file__).resolve().parent.parent / "config.toml"
 
+MAX_TOKEN = 64  # bytes; PROTO_MAX_TOKEN in firmware/include/proto.h, kMaxToken in the bridge
 MEDIA = ("prev", "playpause", "next", "vol_down", "vol_up", "mute")
 # Exactly one per button: action type → key in the config
 ACTIONS = ("media", "app", "open", "osascript", "shortcut")
@@ -49,8 +50,14 @@ def load(path: Path = DEFAULT_PATH) -> DeviceConfig:
     if not path.exists():
         raise SystemExit(f"{path} not found. Copy config.toml.example and fill in the token.")
     dev = _read(path)["device"]
+    token = dev.get("token")
+    if not isinstance(token, str) or not 1 <= len(token.encode()) <= MAX_TOKEN:
+        # The firmware and the bridge reject longer HELLO frames, which would show up only as a
+        # connection that never completes.
+        raise SystemExit(f"{path}: [device] token must be 1 to {MAX_TOKEN} bytes, "
+                         "the same as DESKDECK_TOKEN in bridge/include/secrets.h")
     return DeviceConfig(host=dev.get("host", "deskdeck.local"), port=int(dev.get("port", 7788)),
-                        token=dev["token"], ip=dev.get("ip") or None)
+                        token=token, ip=dev.get("ip") or None)
 
 
 def _button(raw: object, where: str) -> ButtonSpec | None:

@@ -31,7 +31,7 @@ A5 5A | type (1) | length (2, LE) | payload (0..512) | CRC (2, LE)
 
 | Type | Direction | Name | Payload |
 |---|---|---|---|
-| 0x01 | Host → MCU | HELLO | version u8 (=1), token (0..64 B, checked by the bridge, ignored by the MCU) |
+| 0x01 | Host → MCU | HELLO | version u8 (=1), token (at most 64 B, checked by the bridge, ignored by the MCU; the bridge requires a non-empty token, over the wired link it can be empty) |
 | 0x02 | Host → MCU | BLIT_BEGIN | x, y, w, h: u16 |
 | 0x03 | Host → MCU | BLIT_DATA | RGB565 BE, **even** length, ≤ 512 B |
 | 0x04 | Host → MCU | BLIT_END | — |

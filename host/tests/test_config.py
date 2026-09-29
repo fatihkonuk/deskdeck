@@ -52,3 +52,15 @@ def test_missing_file(tmp_path):
         config.load_pages(tmp_path / "config.toml")
     with pytest.raises(SystemExit, match="config.toml.example"):
         config.load(tmp_path / "config.toml")
+
+
+@pytest.mark.parametrize("token", ["", "x" * 65, "ğ" * 33, 12345])
+def test_token_length_is_enforced(tmp_path, token):
+    """1..64 bytes, as the bridge and the firmware accept (UTF-8 bytes, not characters)."""
+    value = f'"{token}"' if isinstance(token, str) else str(token)
+    with pytest.raises(SystemExit, match="token must be 1 to 64 bytes"):
+        config.load(write(tmp_path, f"[device]\ntoken = {value}\n"))
+
+
+def test_token_of_64_bytes_is_accepted(tmp_path):
+    assert config.load(write(tmp_path, f'[device]\ntoken = "{"x" * 64}"\n')).token == "x" * 64
