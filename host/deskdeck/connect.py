@@ -1,8 +1,8 @@
 """Connects to the device over TCP and reconnects with exponential backoff when the link drops.
 
-Resolution order: fixed IP from the config, last cached IP, our own mDNS query (mdns.py; on some mesh
-networks the system resolver cannot resolve .local at all), and finally the system resolver. The IP
-of a successful connection is cached."""
+A fixed IP from the config is used on its own. Otherwise the order is: last cached IP, our own mDNS
+query (mdns.py; on some mesh networks the system resolver cannot resolve .local at all), and finally
+the system resolver. The IP of a successful connection is cached."""
 import asyncio
 import logging
 import socket
@@ -70,30 +70,38 @@ async def _open(ip: str, port: int) -> tuple[asyncio.StreamReader, asyncio.Strea
 
 
 async def open_link(cfg: DeviceConfig) -> Link:
-    """Connects and opens the session (HELLO + token). In order: fixed IP, cached IP, mDNS."""
-    candidates = [cfg.ip] if cfg.ip else []
-    cached = None
-    if not cfg.ip and IP_CACHE.exists():
-        cached = IP_CACHE.read_text().strip()
-        candidates.append(cached)
+    """Connects and opens the session (HELLO + token): the fixed IP if one is configured, otherwise
+    the cached IP, then mDNS."""
+    if cfg.ip:
+        candidates: list[str | None] = [cfg.ip]
+    else:
+        candidates = [IP_CACHE.read_text().strip()] if IP_CACHE.exists() else []
+        candidates.append(None)  # resolve cfg.host
     errors = []
-    for ip in [*candidates, None]:
+    tried: set[str] = set()
+    for ip in candidates:
         try:
             ip = ip or await _resolve(cfg.host)
+        except (OSError, TimeoutError) as e:
+            errors.append(f"{cfg.host}: {str(e) or type(e).__name__}")
+            continue
+        if ip in tried:
+            continue  # mDNS points at the address that just failed
+        tried.add(ip)
+        try:
             reader, writer = await _open(ip, cfg.port)
         except (OSError, TimeoutError) as e:
-            errors.append(f"{ip or cfg.host}: {str(e) or type(e).__name__}")
+            errors.append(f"{ip}: {str(e) or type(e).__name__}")
             continue
         link = Link(reader, writer)
         try:
             await link.open(cfg.token.encode())
         except LinkError as e:
-            # Something accepted the connection but did not complete HELLO: a wrong token (the bridge
-            # closes), or a cached IP that the DHCP server has since given to another host. Forget
-            # the cached IP so mDNS gets a chance, now and on the next attempts.
+            # Something accepted the connection but did not complete HELLO: a wrong token, a slow link,
+            # or a cached IP that the DHCP server has since given to another host. Try mDNS next; if it
+            # finds the device at another address, the cache is overwritten below. The cache itself is
+            # kept, since one HELLO timeout on a flaky Wi-Fi link says little about the address.
             errors.append(f"{ip}: {e}")
-            if ip == cached:
-                IP_CACHE.unlink(missing_ok=True)
             continue
         if not cfg.ip:
             IP_CACHE.parent.mkdir(parents=True, exist_ok=True)
