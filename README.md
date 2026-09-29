@@ -225,6 +225,8 @@ deskdeck/
 
 ## Development
 
+- **Host tests**: `cd host && uv run pytest`. They need no device, `media-control` or macOS fonts, and
+  run in CI on every push.
 - **Wired protocol test** without Wi-Fi: use the NodeMCU as a USB-serial adapter and run
   `uv run deskdeck-wiretest --image cover.png` (setup in [docs/hardware.md](docs/hardware.md#wired-test-setup-no-wi-fi)).
   `--wifi` runs the same test through the bridge, and `--full image.png` stress-tests flow control.
