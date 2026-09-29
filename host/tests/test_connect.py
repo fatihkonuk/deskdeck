@@ -1,5 +1,7 @@
 import asyncio
 
+import pytest
+
 from deskdeck import connect
 from deskdeck.config import DeviceConfig
 from deskdeck.link import LinkError
@@ -83,3 +85,59 @@ def test_open_link_error_reconnects(monkeypatch):
 
     asyncio.run(main())
     assert attempts > 1
+
+
+def test_stale_cached_ip_falls_back_to_mdns(monkeypatch, tmp_path):
+    """The cached IP now belongs to a host that accepts TCP but never completes HELLO."""
+    cache = tmp_path / "device_ip"
+    cache.write_text("192.0.2.1")
+    tried: list[str] = []
+
+    async def open_tcp(ip, port):
+        tried.append(ip)
+        return None, None
+
+    async def resolve(host):
+        return "192.0.2.2"
+
+    async def hello(self, token=b""):
+        if tried[-1] == "192.0.2.1":
+            raise LinkError("no HELLO_ACK")
+
+    async def no_status(ip):
+        pass
+
+    monkeypatch.setattr(connect, "IP_CACHE", cache)
+    monkeypatch.setattr(connect, "_open", open_tcp)
+    monkeypatch.setattr(connect, "_resolve", resolve)
+    monkeypatch.setattr(connect, "_log_bridge_status", no_status)
+    monkeypatch.setattr(connect.Link, "__init__", lambda self, reader, writer: None)
+    monkeypatch.setattr(connect.Link, "open", hello)
+
+    asyncio.run(connect.open_link(CFG))
+    assert tried == ["192.0.2.1", "192.0.2.2"]
+    assert cache.read_text() == "192.0.2.2"
+
+
+def test_hello_failure_on_cached_ip_clears_cache(monkeypatch, tmp_path):
+    cache = tmp_path / "device_ip"
+    cache.write_text("192.0.2.1")
+
+    async def open_tcp(ip, port):
+        return None, None
+
+    async def resolve(host):
+        raise TimeoutError
+
+    async def hello(self, token=b""):
+        raise LinkError("peer closed the connection during HELLO")
+
+    monkeypatch.setattr(connect, "IP_CACHE", cache)
+    monkeypatch.setattr(connect, "_open", open_tcp)
+    monkeypatch.setattr(connect, "_resolve", resolve)
+    monkeypatch.setattr(connect.Link, "__init__", lambda self, reader, writer: None)
+    monkeypatch.setattr(connect.Link, "open", hello)
+
+    with pytest.raises(LinkError, match="192.0.2.1: peer closed the connection during HELLO"):
+        asyncio.run(connect.open_link(CFG))
+    assert not cache.exists()

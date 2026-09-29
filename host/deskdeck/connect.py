@@ -72,8 +72,10 @@ async def _open(ip: str, port: int) -> tuple[asyncio.StreamReader, asyncio.Strea
 async def open_link(cfg: DeviceConfig) -> Link:
     """Connects and opens the session (HELLO + token). In order: fixed IP, cached IP, mDNS."""
     candidates = [cfg.ip] if cfg.ip else []
+    cached = None
     if not cfg.ip and IP_CACHE.exists():
-        candidates.append(IP_CACHE.read_text().strip())
+        cached = IP_CACHE.read_text().strip()
+        candidates.append(cached)
     errors = []
     for ip in [*candidates, None]:
         try:
@@ -83,7 +85,16 @@ async def open_link(cfg: DeviceConfig) -> Link:
             errors.append(f"{ip or cfg.host}: {str(e) or type(e).__name__}")
             continue
         link = Link(reader, writer)
-        await link.open(cfg.token.encode())  # the bridge closes on a wrong token → LinkError
+        try:
+            await link.open(cfg.token.encode())
+        except LinkError as e:
+            # Something accepted the connection but did not complete HELLO: a wrong token (the bridge
+            # closes), or a cached IP that the DHCP server has since given to another host. Forget
+            # the cached IP so mDNS gets a chance, now and on the next attempts.
+            errors.append(f"{ip}: {e}")
+            if ip == cached:
+                IP_CACHE.unlink(missing_ok=True)
+            continue
         if not cfg.ip:
             IP_CACHE.parent.mkdir(parents=True, exist_ok=True)
             IP_CACHE.write_text(ip)
