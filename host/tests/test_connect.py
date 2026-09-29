@@ -164,3 +164,15 @@ def test_unexpected_error_propagates_when_retry_is_off(monkeypatch):
     monkeypatch.setattr(connect, "open_link", open_link)
     with pytest.raises(FileNotFoundError):
         asyncio.run(connect.run_forever(CFG, session, retry_unexpected=False))
+
+
+@pytest.mark.parametrize("content", [b"\xff\xfe not utf-8", b"not an address", None])
+def test_unusable_cache_falls_back_to_mdns(monkeypatch, tmp_path, content):
+    cache = tmp_path / "device_ip"
+    if content is None:
+        cache.mkdir()  # a directory where the file should be
+    else:
+        cache.write_bytes(content)
+    opened = fake_network(monkeypatch, cache, resolved="192.0.2.2", hello_ok={"192.0.2.2"})
+    asyncio.run(connect.open_link(CFG))
+    assert opened == ["192.0.2.2"]
