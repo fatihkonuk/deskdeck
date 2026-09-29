@@ -1,0 +1,60 @@
+# Copy to config.toml (it is git-ignored).
+[device]
+host = "deskdeck.local"
+port = 7788
+token = "same token as bridge/include/secrets.h"
+# ip = "192.168.1.50"   # fixed IP if mDNS gives you trouble (used instead of host)
+
+# ---- Pages ----
+# Each [[pages]] entry is one page; the order of the buttons array is the grid position
+# (0-3 top row, 4-7 bottom row). Empty cell: {}. Swipe left on the screen for the next page,
+# right for the previous one. While the service is running, saving this file reloads the pages
+# (errors are logged and the previous pages are kept).
+#
+# Each button has exactly one action:
+#   media     = "prev" | "playpause" | "next" | "vol_down" | "vol_up" | "mute"
+#   app       = "Safari"                     → open -a Safari
+#   open      = "https://..." or a file path → open ...
+#   osascript = "one line of AppleScript"    → osascript -e ...
+#   shortcut  = "Shortcut name"              → shortcuts run ...
+# Optional: label = "Text", icon = "🎵" (emoji/symbol) or icon = "~/picture.png".
+# An app button without an icon uses the application's own icon.
+
+[[pages]]
+name = "Media"
+buttons = [
+  { media = "prev" },
+  { media = "playpause" },
+  { media = "next" },
+  { label = "YT Music", open = "https://music.youtube.com", icon = "🎵" },
+  { media = "vol_down" },
+  { media = "vol_up" },
+  { media = "mute" },
+  { label = "Music", app = "Music" },
+]
+
+[[pages]]
+name = "Apps"
+buttons = [
+  { label = "Safari", app = "Safari" },
+  { label = "Terminal", app = "Terminal" },
+  { label = "Mail", app = "Mail" },
+  { label = "Messages", app = "Messages" },
+  { label = "Finder", app = "Finder" },
+  { label = "Calendar", app = "Calendar" },
+  { label = "Notes", app = "Notes" },
+  { label = "Settings", app = "System Settings" },
+]
+
+[[pages]]
+name = "System"
+buttons = [
+  { label = "Screenshot", app = "Screenshot" },
+  { label = "Dark mode", icon = "🌓", osascript = "tell application \"System Events\" to tell appearance preferences to set dark mode to not dark mode" },
+  { label = "Microphone", icon = "🎙️", osascript = "if input volume of (get volume settings) > 0 then set volume input volume 0 else set volume input volume 75" },
+  { label = "Display off", icon = "💤", osascript = "do shell script \"pmset displaysleepnow\"" },
+  { label = "Take a break", shortcut = "Take a Break", icon = "☕" },
+  { label = "Activity", app = "Activity Monitor" },
+  {},
+  {},
+]

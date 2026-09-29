@@ -1,0 +1,10 @@
+# Secrets
+bridge/include/secrets.h
+host/config.toml
+
+# Build output
+.pio/
+.venv/
+__pycache__/
+*.pyc
+.DS_Store

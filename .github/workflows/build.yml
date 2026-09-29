@@ -1,0 +1,49 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  firmware:
+    name: STM32 firmware + ESP8266 bridge
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ hashFiles('firmware/platformio.ini', 'bridge/platformio.ini') }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install platformio
+      - name: Build firmware (app + bring-up harness)
+        run: pio run -d firmware -e bluepill -e harness
+      - name: Build bridge
+        run: |
+          cp bridge/include/secrets.h.example bridge/include/secrets.h
+          pio run -d bridge
+
+  host:
+    name: macOS host
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: host
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked
+      - name: Import and protocol smoke test
+        run: |
+          uv run python - <<'PY'
+          import deskdeck.app, deskdeck.wiretest
+          from pathlib import Path
+          from deskdeck import config, protocol as p
+          assert p.crc16(b"123456789") == 0x29B1
+          frames = p.Decoder().feed(b"junk" + p.encode(p.PING) + p.progress(1, 2, True))
+          assert [t for t, _ in frames] == [p.PING, p.PROGRESS], frames
+          assert len(config.load_pages(Path("config.toml.example"))) == 3
+          print("ok")
+          PY

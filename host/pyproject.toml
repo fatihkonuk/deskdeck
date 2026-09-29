@@ -1,0 +1,17 @@
+[project]
+name = "deskdeck"
+version = "0.1.0"
+description = "deskdeck host service for macOS: now playing, media keys and shortcut pages for a Wi-Fi touch display"
+requires-python = ">=3.12"
+dependencies = [
+    "pillow>=10",
+    "pyserial-asyncio>=0.6",
+]
+
+[project.scripts]
+deskdeck = "deskdeck.app:main"
+deskdeck-wiretest = "deskdeck.wiretest:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
