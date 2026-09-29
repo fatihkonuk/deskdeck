@@ -4,6 +4,7 @@ A fixed IP from the config is used on its own. Otherwise the order is: last cach
 query (mdns.py; on some mesh networks the system resolver cannot resolve .local at all), and finally
 the system resolver. The IP of a successful connection is cached."""
 import asyncio
+import ipaddress
 import logging
 import socket
 import time
@@ -69,13 +70,28 @@ async def _open(ip: str, port: int) -> tuple[asyncio.StreamReader, asyncio.Strea
     return reader, writer
 
 
+def _cached_ip() -> str | None:
+    """The last good IP, or None if there is none or the cache file is unusable: a broken cache must
+    not keep mDNS from being tried."""
+    try:
+        text = IP_CACHE.read_text().strip()
+        ipaddress.ip_address(text)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as e:  # UnicodeDecodeError is a ValueError too
+        log.warning("ignoring the cached IP in %s: %s", IP_CACHE, e)
+        return None
+    return text
+
+
 async def open_link(cfg: DeviceConfig) -> Link:
     """Connects and opens the session (HELLO + token): the fixed IP if one is configured, otherwise
     the cached IP, then mDNS."""
     if cfg.ip:
         candidates: list[str | None] = [cfg.ip]
     else:
-        candidates = [IP_CACHE.read_text().strip()] if IP_CACHE.exists() else []
+        cached = _cached_ip()
+        candidates = [cached] if cached else []
         candidates.append(None)  # resolve cfg.host
     errors = []
     tried: set[str] = set()
@@ -104,8 +120,11 @@ async def open_link(cfg: DeviceConfig) -> Link:
             errors.append(f"{ip}: {e}")
             continue
         if not cfg.ip:
-            IP_CACHE.parent.mkdir(parents=True, exist_ok=True)
-            IP_CACHE.write_text(ip)
+            try:
+                IP_CACHE.parent.mkdir(parents=True, exist_ok=True)
+                IP_CACHE.write_text(ip)
+            except OSError as e:  # the cache only speeds up the next connect; keep this one
+                log.warning("could not cache the device IP in %s: %s", IP_CACHE, e)
         log.info("connected: %s:%d", ip, cfg.port)
         task = asyncio.create_task(_log_bridge_status(ip))
         _bg_tasks.add(task)
