@@ -20,6 +20,9 @@ A5 5A | type (1) | length (2, LE) | payload (0..512) | CRC (2, LE)
   keeps searching. Checking the header before waiting for the payload keeps an `A5 5A` that happens to
   appear inside pixel data from stalling the parser. Unknown types are therefore dropped like noise;
   a host with a different protocol version is caught at HELLO instead.
+- When a client disconnects or is replaced, the bridge writes 519 zero bytes (one maximum-size frame)
+  to the UART. A frame that was cut off mid-way is then completed with zeros, fails its CRC, and the
+  parser is back in sync before the next client's HELLO arrives, instead of swallowing it.
 
 ## Messages
 
