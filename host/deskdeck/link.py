@@ -54,10 +54,16 @@ class Link:
         self._ack = asyncio.get_running_loop().create_future()
         self._writer.write(p.hello(token))  # not counted against the credit
         await self._drain()
-        try:
-            self.ack = await asyncio.wait_for(asyncio.shield(self._ack), HELLO_TIMEOUT_S)
-        except TimeoutError:
-            raise LinkError("no HELLO_ACK") from None
+        # Also wake on `failed`: the bridge closes the connection right away on a wrong token, and
+        # waiting out the timeout would only report a misleading "no HELLO_ACK".
+        await asyncio.wait({self._ack, self.failed}, timeout=HELLO_TIMEOUT_S,
+                           return_when=asyncio.FIRST_COMPLETED)
+        if not self._ack.done():
+            if self.failed.done():
+                raise LinkError(f"{self.failed.exception()} during HELLO "
+                                "(does the token in config.toml match bridge/include/secrets.h?)")
+            raise LinkError("no HELLO_ACK")
+        self.ack = self._ack.result()
         self.sent = self.consumed = 0
         self._last_progress = time.monotonic()
         self._ready.set()
