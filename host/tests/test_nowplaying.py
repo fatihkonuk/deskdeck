@@ -122,3 +122,14 @@ def test_watcher_reads_media_control_output(monkeypatch):
     out = json.dumps({"type": "data", "diff": False, "payload": {"title": "From the stream"}})
     w = run_watcher(monkeypatch, [sys.executable, "-c", f"print({out!r})"])
     assert w.state.title == "From the stream"
+
+
+def test_out_of_range_numbers_read_as_zero():
+    """Negative, NaN or infinite values must not reach PROGRESS, whose packing would fail on every
+    redraw and send the session into a reconnect loop."""
+    w = Watcher()
+    w._apply(b'{"type": "data", "diff": false, "payload": {"title": "Song", "playing": true, '
+             b'"durationMicros": -1000000, "elapsedTimeMicros": NaN, "playbackRate": Infinity}}')
+    assert (w.state.duration_s, w.state.elapsed_s, w.state.rate) == (0.0, 0.0, 0.0)
+    w._apply(line({"playbackRate": 1e308, "timestampEpochMicros": 1}, diff=True))
+    assert w.state.elapsed_now() == 0.0  # overflows to infinity, read as 0

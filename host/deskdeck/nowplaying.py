@@ -9,6 +9,7 @@ import binascii
 import hashlib
 import json
 import logging
+import math
 import time
 from dataclasses import dataclass, field
 
@@ -40,7 +41,8 @@ class NowPlaying:
         e = self.elapsed_s
         if self.playing:
             e += ((now or time.time()) - self.timestamp) * (self.rate or 1.0)
-        return max(0.0, min(e, self.duration_s)) if self.duration_s else max(0.0, e)
+        e = max(0.0, min(e, self.duration_s)) if self.duration_s else max(0.0, e)
+        return e if math.isfinite(e) else 0.0  # e.g. an absurd playbackRate
 
 
 def _text(v: object) -> str:
@@ -48,9 +50,13 @@ def _text(v: object) -> str:
 
 
 def _number(v: object) -> float:
-    """A field of the wrong type reads as 0 instead of raising: it stays in the merged payload, so an
-    exception would repeat on every later update and freeze the state."""
-    return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0.0
+    """A field of the wrong type, or a negative or non-finite value (json.loads accepts NaN and
+    Infinity), reads as 0 instead of raising: it stays in the merged payload, so an exception would repeat
+    on every later update. All fields read with this are durations, positions, times or rates."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return 0.0
+    v = float(v)
+    return v if math.isfinite(v) and v >= 0 else 0.0
 
 
 def _to_state(p: dict, artwork: bytes | None, artwork_key: str) -> NowPlaying:

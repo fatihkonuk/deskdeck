@@ -121,4 +121,8 @@ def fill(x: int, y: int, w: int, h: int, color: int) -> bytes:
 
 
 def progress(elapsed_ms: int, duration_ms: int, playing: bool) -> bytes:
-    return encode(PROGRESS, struct.pack("<IIB", elapsed_ms, duration_ms, playing))
+    """Values are clamped to the u32 range, so out-of-range media data cannot make packing fail."""
+    def u32(v: int) -> int:
+        return min(max(v, 0), 0xFFFFFFFF)
+
+    return encode(PROGRESS, struct.pack("<IIB", u32(elapsed_ms), u32(duration_ms), playing))
