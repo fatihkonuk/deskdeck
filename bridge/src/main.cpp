@@ -145,7 +145,7 @@ void logf(const char *fmt, ...)
     }
     if (log_dropped) {
         char note[48];
-        const int n = snprintf(note, sizeof note, "[%8lu] (%lu lines dropped)\n", millis(), log_dropped);
+        const int n = snprintf(note, sizeof note, "[%8lu] (%u lines dropped)\n", millis(), log_dropped);
         if (room >= len + n) {
             log_client.write(note, n);
             log_dropped = 0;
