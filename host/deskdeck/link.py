@@ -53,7 +53,7 @@ class Link:
         self._ready.clear()
         self._ack = asyncio.get_running_loop().create_future()
         self._writer.write(p.hello(token))  # not counted against the credit
-        await self._writer.drain()
+        await self._drain()
         try:
             self.ack = await asyncio.wait_for(asyncio.shield(self._ack), HELLO_TIMEOUT_S)
         except TimeoutError:
@@ -87,7 +87,16 @@ class Link:
         # No await between the last check and the write: a HELLO cannot slip in between.
         self._writer.write(frame)
         self.sent = (self.sent + len(frame)) & 0xFFFFFFFF
-        await self._writer.drain()
+        await self._drain()
+
+    async def _drain(self) -> None:
+        """drain() raises the transport's own OSError (e.g. connection reset); report it as a LinkError
+        so callers only have to handle one exception type."""
+        try:
+            await self._writer.drain()
+        except OSError as e:
+            self._fail(LinkError(f"write error: {e}"))
+            raise self.failed.exception() from None
 
     async def settle(self) -> None:
         """Waits until everything sent has been consumed by the MCU."""
