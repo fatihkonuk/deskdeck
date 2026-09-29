@@ -65,6 +65,7 @@ bool client_active;
 WiFiClient pending; /* candidate waiting to send HELLO */
 bool pending_active;
 WiFiClient log_client;
+uint32_t log_dropped; /* lines skipped because the log connection could not take them */
 
 uint8_t pending_buf[kHeaderLen + kMaxPayload + kCrcLen];
 size_t pending_len;
@@ -127,12 +128,30 @@ void logf(const char *fmt, ...)
     if (!log_client.connected()) {
         return;
     }
-    char line[160];
+    char line[176];
+    const int prefix = snprintf(line, sizeof line, "[%8lu] ", millis());
     va_list ap;
     va_start(ap, fmt);
-    vsnprintf(line, sizeof line, fmt, ap);
+    vsnprintf(line + prefix, sizeof line - prefix - 1, fmt, ap); /* keep one byte for the newline */
     va_end(ap);
-    log_client.printf("[%8lu] %s\n", millis(), line);
+    size_t len = strlen(line);
+    line[len++] = '\n';
+    /* The log is best effort: when TCP cannot queue the line right now, drop it instead of letting
+     * write() wait for an ACK and stall the TCP <-> UART forwarding (the very outages being logged). */
+    const size_t room = log_client.availableForWrite();
+    if (room < len) {
+        log_dropped++;
+        return;
+    }
+    if (log_dropped) {
+        char note[48];
+        const int n = snprintf(note, sizeof note, "[%8lu] (%lu lines dropped)\n", millis(), log_dropped);
+        if (room >= len + n) {
+            log_client.write(note, n);
+            log_dropped = 0;
+        }
+    }
+    log_client.write(line, len);
 }
 
 /* CRC-16/CCITT-FALSE, same as firmware/src/crc16.c. */
@@ -205,6 +224,8 @@ void accept_connections()
     if (log_server.hasClient()) {
         log_client.stop();
         log_client = log_server.accept();
+        log_client.setTimeout(kTcpWriteTimeoutMs); /* backstop; logf() already checks for room */
+        log_dropped = 0;
         logf("log connected; wifi=%s bssid=%s channel=%d rssi=%d dBm sleep=%d phy=%d ip=%s client=%s", WiFi.SSID().c_str(),
              WiFi.BSSIDstr().c_str(), WiFi.channel(), WiFi.RSSI(), static_cast<int>(WiFi.getSleepMode()),
              static_cast<int>(WiFi.getPhyMode()),

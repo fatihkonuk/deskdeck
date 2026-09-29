@@ -65,7 +65,9 @@ re-entered. The roaming code wraps it in `WiFi.persistent(false)`.
 - Its `bool` conversion stays true after `stop()` while unread data remains, so the bridge tracks
   client state with explicit flags.
 - `write()` blocks for up to 5000 ms by default when lwIP can't queue a packet, stalling both
-  directions. The bridge uses `setTimeout(10)` plus a 2 KB output buffer so no bytes are lost.
+  directions. The bridge uses `setTimeout(10)` plus a 2 KB output buffer so no bytes are lost. The
+  debug log on port 23 goes further and drops a line when TCP has no room for it, then reports how
+  many lines were dropped.
 
 **Periodic latency spikes on Wi-Fi.** On some networks the ESP8266 sees bursts of packet loss
 (e.g. ~3 s every ~20 s), which turn into 1–5 s TCP round trips. The credit window (7.6 KB) and a 5 s
