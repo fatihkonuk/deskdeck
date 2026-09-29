@@ -194,8 +194,12 @@ def app_icon(name: str) -> Image.Image | None:
     path = APP_ICON_CACHE / f"{hashlib.sha1(name.encode()).hexdigest()[:16]}.png"
     if not path.exists():
         APP_ICON_CACHE.mkdir(parents=True, exist_ok=True)
-        r = subprocess.run(["osascript", "-l", "JavaScript", "-e", _APP_ICON_JS, name, str(path)],
-                           capture_output=True, text=True, timeout=10)
+        try:
+            r = subprocess.run(["osascript", "-l", "JavaScript", "-e", _APP_ICON_JS, name, str(path)],
+                               capture_output=True, text=True, timeout=10)
+        except subprocess.TimeoutExpired:
+            log.warning("could not get icon for %s: osascript timed out", name)
+            return None
         if r.returncode or not path.exists():
             log.warning("could not get icon for %s: %s", name, r.stderr.strip())
             return None
@@ -216,21 +220,20 @@ def _symbol(text: str) -> Image.Image | None:
 
 
 def _graphic(spec: ButtonSpec, size: int) -> Image.Image | None:
-    src = None
-    if spec.icon:
-        p = Path(spec.icon).expanduser()
-        if p.is_file():
-            try:
-                src = Image.open(p)
-            except OSError as e:
-                log.warning("could not open %s: %s", p, e)
+    try:
+        if spec.icon:
+            p = Path(spec.icon).expanduser()
+            src = Image.open(p) if p.is_file() else _symbol(spec.icon)
+        elif spec.action == "app":
+            src = app_icon(spec.arg)
         else:
-            src = _symbol(spec.icon)
-    elif spec.action == "app":
-        src = app_icon(spec.arg)
-    if src is None:
+            return None
+        if src is None:
+            return None
+        src = src.convert("RGBA")  # Image.open() is lazy: a truncated or corrupt file fails here
+    except OSError as e:
+        log.warning("could not load icon for %s: %s", spec.name, e)
         return None
-    src = src.convert("RGBA")
     bbox = src.getchannel("A").getbbox()
     if bbox is None:
         return None
