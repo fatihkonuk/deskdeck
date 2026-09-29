@@ -189,8 +189,13 @@ function run(argv) {
 """
 
 
+class IconUnavailable(Exception):
+    """The icon could not be fetched this time, but a later attempt may succeed."""
+
+
 def app_icon(name: str) -> Image.Image | None:
-    """The application's Dock icon, cached on disk."""
+    """The application's Dock icon, cached on disk. None if there is no such app; IconUnavailable if
+    fetching it timed out (e.g. a busy system right after login)."""
     path = APP_ICON_CACHE / f"{hashlib.sha1(name.encode()).hexdigest()[:16]}.png"
     if not path.exists():
         APP_ICON_CACHE.mkdir(parents=True, exist_ok=True)
@@ -198,8 +203,7 @@ def app_icon(name: str) -> Image.Image | None:
             r = subprocess.run(["osascript", "-l", "JavaScript", "-e", _APP_ICON_JS, name, str(path)],
                                capture_output=True, text=True, timeout=10)
         except subprocess.TimeoutExpired:
-            log.warning("could not get icon for %s: osascript timed out", name)
-            return None
+            raise IconUnavailable(f"could not get icon for {name}: osascript timed out") from None
         if r.returncode or not path.exists():
             log.warning("could not get icon for %s: %s", name, r.stderr.strip())
             return None
@@ -249,10 +253,32 @@ def _label(text: str, f: ImageFont.FreeTypeFont, width: int, height: int) -> Ima
     return _strip((0, 0, w, height), text, f, FG)
 
 
-@lru_cache(maxsize=64)
 def cell(spec: ButtonSpec) -> tuple[Part, ...]:
     """Cell content as separate parts: the icon area is first filled with black, then only these are
-    sent (the full 106×70 area is ~15 KB, the parts ~5 KB)."""
+    sent (the full 106×70 area is ~15 KB, the parts ~5 KB). When an icon cannot be fetched right now
+    the cell is drawn as text and not cached, so the next redraw tries the icon again."""
+    try:
+        return _cell(spec)
+    except IconUnavailable as e:
+        log.warning("%s; showing the label for now", e)
+        return _text_cell(spec)
+
+
+def _text_cell(spec: ButtonSpec) -> tuple[Part, ...]:
+    """Text only: up to two lines, centred."""
+    _, _, w, h = layout.icon_rect(0)
+    f = font(17, "Semibold")
+    lines = wrap(spec.name, f, w - 4, 2)
+    top = (h - 22 * len(lines)) // 2
+    parts = []
+    for i, line in enumerate(lines):
+        img = _label(line, f, w - 4, 22)
+        parts.append(((w - img.width) // 2, top + 22 * i, img))
+    return tuple(parts)
+
+
+@lru_cache(maxsize=64)
+def _cell(spec: ButtonSpec) -> tuple[Part, ...]:
     _, _, w, h = layout.icon_rect(0)
     if spec.action == "media" and not spec.icon:
         img = icon(spec.arg)
@@ -261,15 +287,7 @@ def cell(spec: ButtonSpec) -> tuple[Part, ...]:
     label = spec.label or (spec.arg if spec.action in ("app", "shortcut") else "")
     graphic = _graphic(spec, GRAPHIC if label else GRAPHIC_ALONE)
     if graphic is None:
-        # Text only: up to two lines, centred
-        f = font(17, "Semibold")
-        lines = wrap(label or spec.name, f, w - 4, 2)
-        top = (h - 22 * len(lines)) // 2
-        parts = []
-        for i, line in enumerate(lines):
-            img = _label(line, f, w - 4, 22)
-            parts.append(((w - img.width) // 2, top + 22 * i, img))
-        return tuple(parts)
+        return _text_cell(spec)  # label or spec.name is always spec.name
     if not label:
         return (((w - graphic.width) // 2, (h - graphic.height) // 2, graphic),)
     top = (h - GRAPHIC - LABEL_GAP - LABEL_H) // 2
