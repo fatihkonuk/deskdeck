@@ -9,7 +9,8 @@
 
 #include "link.h"
 
-/* Return a short description on error (for LOG), NULL on success. */
+/* Return a short description on error (for LOG), NULL on success. An error is reported once per blit:
+ * the remaining DATA and the END of a rejected or broken blit are dropped without another message. */
 const char *blit_begin(uint16_t x, uint16_t y, uint16_t w, uint16_t h);
 const char *blit_data(const link_span_t *data);
 const char *blit_end(void);

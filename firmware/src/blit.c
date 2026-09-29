@@ -3,19 +3,23 @@
 #include "lcd.h"
 #include "lcd_bus.h"
 
+/* After an error the rest of that blit is discarded quietly: one rejected 128×128 cover would otherwise
+ * produce 64 "DATA without BEGIN" LOG frames, and the MCU busy-waits on the UART to send each one. */
+typedef enum { BLIT_IDLE, BLIT_ACTIVE, BLIT_DISCARD } blit_state_t;
+
 static struct {
-    bool active;
+    blit_state_t state;
     uint16_t x, y, w, h;
     uint32_t pos; /* pixels written */
 } s_blit;
 
 const char *blit_begin(uint16_t x, uint16_t y, uint16_t w, uint16_t h)
 {
-    s_blit.active = false;
     if (w == 0 || h == 0 || x + w > lcd_width() || y + h > lcd_height()) {
+        s_blit.state = BLIT_DISCARD;
         return "blit: rectangle off screen";
     }
-    s_blit = (typeof(s_blit)){ .active = true, .x = x, .y = y, .w = w, .h = h };
+    s_blit = (typeof(s_blit)){ .state = BLIT_ACTIVE, .x = x, .y = y, .w = w, .h = h };
     return NULL;
 }
 
@@ -36,17 +40,22 @@ static void write_span(const link_span_t *s, uint16_t byte_off, uint16_t n)
 const char *blit_data(const link_span_t *data)
 {
     const uint16_t len = link_span_len(data);
-    if (!s_blit.active) {
+    if (s_blit.state == BLIT_DISCARD) {
+        return NULL; /* already reported */
+    }
+    if (s_blit.state == BLIT_IDLE) {
+        s_blit.state = BLIT_DISCARD; /* e.g. BEGIN lost to a CRC error: report once, drop until END */
         return "blit: DATA without BEGIN";
     }
     if (len & 1u) {
+        s_blit.state = BLIT_DISCARD;
         return "blit: odd-length DATA";
     }
 
     const uint32_t total = (uint32_t)s_blit.w * s_blit.h;
     uint32_t pixels = len / 2u;
     if (s_blit.pos + pixels > total) {
-        s_blit.active = false;
+        s_blit.state = BLIT_DISCARD;
         return "blit: more data than the rectangle";
     }
 
@@ -76,7 +85,13 @@ const char *blit_data(const link_span_t *data)
 
 const char *blit_end(void)
 {
-    const bool complete = s_blit.active && s_blit.pos == (uint32_t)s_blit.w * s_blit.h;
-    s_blit.active = false;
-    return complete ? NULL : "blit: data missing at END";
+    const blit_state_t state = s_blit.state;
+    s_blit.state = BLIT_IDLE;
+    if (state == BLIT_DISCARD) {
+        return NULL; /* already reported */
+    }
+    if (state == BLIT_IDLE) {
+        return "blit: END without BEGIN";
+    }
+    return s_blit.pos == (uint32_t)s_blit.w * s_blit.h ? NULL : "blit: data missing at END";
 }
