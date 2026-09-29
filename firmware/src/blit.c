@@ -18,7 +18,8 @@ void blit_reset(void)
     s_blit.state = BLIT_IDLE;
 }
 
-const char *blit_abort(const char *reason)
+/* Marks the current blit as failed and returns `reason`: its remaining frames are dropped quietly. */
+static const char *blit_abort(const char *reason)
 {
     s_blit.state = BLIT_DISCARD;
     return reason;

@@ -2,6 +2,7 @@
  * Frame: A5 5A | type (1) | length (2, LE) | payload | CRC16-CCITT-FALSE (2, LE; over type..payload) */
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -43,5 +44,23 @@ enum {
 };
 #define BUTTON_INDEX_NONE 0xFF
 enum { BRIDGE_WIFI_CONNECTING = 1, BRIDGE_PORTAL = 2, BRIDGE_WAITING_MAC = 3 };
+
+/* Whether a received header can start a frame: a known type with a length that fits it. Checked
+ * before waiting for the payload, so an A5 5A that happens to appear in pixel data (after a CRC error
+ * threw the parser off) is skipped instead of making it wait for up to 512 bytes of "payload". */
+static inline bool proto_header_ok(uint8_t type, uint16_t len)
+{
+    switch (type) {
+    case MSG_HELLO:      return len >= 1 && len <= PROTO_MAX_PAYLOAD;
+    case MSG_BLIT_BEGIN: return len == 8;
+    case MSG_BLIT_DATA:  return len > 0 && len <= PROTO_MAX_PAYLOAD && (len & 1u) == 0;
+    case MSG_BLIT_END:   return len == 0;
+    case MSG_PROGRESS:   return len == 9;
+    case MSG_PING:       return len == 0;
+    case MSG_FILL:       return len == 10;
+    case MSG_STATUS:     return len == 1;
+    default:             return false;
+    }
+}
 
 uint16_t crc16_ccitt(uint16_t crc, const uint8_t *data, size_t n);

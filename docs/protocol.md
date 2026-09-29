@@ -15,8 +15,11 @@ A5 5A | type (1) | length (2, LE) | payload (0..512) | CRC (2, LE)
 - All multi-byte fields are little-endian. **Exception**: pixels inside BLIT_DATA are RGB565
   **big-endian** (high byte first) because they are streamed straight to the display.
 - Maximum payload is 512 B, maximum frame 519 B.
-- The receiver finds sync by searching for `A5 5A`. If the length is > 512 or the CRC fails, it skips
-  one byte and keeps searching.
+- The receiver finds sync by searching for `A5 5A`. If the header does not fit (unknown type, or a
+  length that does not match the type, see the table below) or the CRC fails, it skips one byte and
+  keeps searching. Checking the header before waiting for the payload keeps an `A5 5A` that happens to
+  appear inside pixel data from stalling the parser. Unknown types are therefore dropped like noise;
+  a host with a different protocol version is caught at HELLO instead.
 
 ## Messages
 
@@ -63,9 +66,8 @@ press.
 Frames that arrive before HELLO are silently dropped. The host notices this as "CREDIT is not
 advancing" (see below) and sends HELLO again. The same mechanism recovers the session after an MCU reset.
 
-A blit the MCU cannot carry out is reported with a single LOG: malformed BLIT_BEGIN, rectangle off
-screen, BLIT_DATA without BLIT_BEGIN (e.g. BEGIN lost to a CRC error), odd length, or more data than
-the rectangle. The remaining BLIT_DATA and the BLIT_END of that blit are then dropped silently. A blit
+A blit the MCU cannot carry out is reported with a single LOG: rectangle off screen, BLIT_DATA without
+BLIT_BEGIN (e.g. BEGIN lost to a CRC error), or more data than the rectangle. The remaining BLIT_DATA and the BLIT_END of that blit are then dropped silently. A blit
 that is still short of pixels at BLIT_END is reported there, and so is a BLIT_END with no blit in
 progress. Frames carry no sequence number, so if a blit's END *and* the next blit's BEGIN are both lost,
 the second blit cannot be told apart from the first and goes unreported.

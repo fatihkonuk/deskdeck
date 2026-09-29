@@ -50,21 +50,20 @@ static void send_hello_ack(void)
     link_send(MSG_HELLO_ACK, p, sizeof p);
 }
 
+/* link_poll only delivers known frame types whose length fits the type (proto_header_ok), so the
+ * payload fields can be read without further length checks. */
 static void on_frame(uint8_t type, const link_span_t *p)
 {
-    const uint16_t len = link_span_len(p);
     const uint32_t now = HAL_GetTick();
 
     if (type == MSG_STATUS) {
         /* The bridge only sends this while no client is connected: the session is over. */
-        if (len == 1) {
-            s_connected = false;
-            ui_show_offline(link_span_u8(p, 0));
-        }
+        s_connected = false;
+        ui_show_offline(link_span_u8(p, 0));
         return;
     }
     if (type == MSG_HELLO) {
-        if (len < 1 || link_span_u8(p, 0) != PROTO_VERSION) {
+        if (link_span_u8(p, 0) != PROTO_VERSION) {
             link_log("hello: protocol version mismatch");
         }
         s_connected = true;
@@ -82,8 +81,7 @@ static void on_frame(uint8_t type, const link_span_t *p)
 
     switch (type) {
     case MSG_BLIT_BEGIN:
-        log_if(len == 8 ? blit_begin(link_span_u16(p, 0), link_span_u16(p, 2), link_span_u16(p, 4), link_span_u16(p, 6))
-                        : blit_abort("blit: malformed BEGIN"));
+        log_if(blit_begin(link_span_u16(p, 0), link_span_u16(p, 2), link_span_u16(p, 4), link_span_u16(p, 6)));
         break;
     case MSG_BLIT_DATA:
         log_if(blit_data(p));
@@ -92,20 +90,13 @@ static void on_frame(uint8_t type, const link_span_t *p)
         log_if(blit_end());
         break;
     case MSG_PROGRESS:
-        if (len == 9) {
-            ui_set_progress(link_span_u32(p, 0), link_span_u32(p, 4), link_span_u8(p, 8) != 0, now);
-        }
+        ui_set_progress(link_span_u32(p, 0), link_span_u32(p, 4), link_span_u8(p, 8) != 0, now);
         break;
     case MSG_FILL:
-        if (len == 10) {
-            lcd_fill_rect((int16_t)link_span_u16(p, 0), (int16_t)link_span_u16(p, 2), (int16_t)link_span_u16(p, 4),
-                          (int16_t)link_span_u16(p, 6), link_span_u16(p, 8));
-        }
+        lcd_fill_rect((int16_t)link_span_u16(p, 0), (int16_t)link_span_u16(p, 2), (int16_t)link_span_u16(p, 4),
+                      (int16_t)link_span_u16(p, 6), link_span_u16(p, 8));
         break;
-    case MSG_PING:
-        break;
-    default:
-        link_log("unknown frame type");
+    default: /* PING: only refreshes s_last_rx_ms */
         break;
     }
 }
