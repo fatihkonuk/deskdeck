@@ -66,6 +66,7 @@ WiFiClient pending; /* candidate waiting to send HELLO */
 bool pending_active;
 WiFiClient log_client;
 uint32_t log_dropped; /* lines skipped because the log connection could not take them */
+char reset_reason[24]; /* ESP.getResetReason() returns a String; it cannot change after boot, so copy it once */
 
 uint8_t pending_buf[kHeaderLen + kMaxPayload + kCrcLen];
 size_t pending_len;
@@ -154,6 +155,36 @@ void logf(const char *fmt, ...)
     log_client.write(line, len);
 }
 
+/* Formatting without Arduino String: toString(), BSSIDstr(), SSID() and psk() return heap-allocated
+ * temporaries, and allocating inside loop() fragments the heap over long uptimes. */
+const char *ip_str(const IPAddress &ip, char (&buf)[16])
+{
+    snprintf(buf, sizeof buf, "%u.%u.%u.%u", ip[0], ip[1], ip[2], ip[3]);
+    return buf;
+}
+
+const char *mac_str(const uint8_t *mac, char (&buf)[18])
+{
+    snprintf(buf, sizeof buf, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    return buf;
+}
+
+/* The station's SSID and password as C strings (what WiFi.SSID() and WiFi.psk() copy into a String). */
+struct Credentials {
+    char ssid[33];
+    char psk[65];
+};
+
+void get_credentials(Credentials &c)
+{
+    struct station_config conf;
+    wifi_station_get_config(&conf);
+    memcpy(c.ssid, conf.ssid, sizeof conf.ssid);
+    c.ssid[sizeof conf.ssid] = '\0';
+    memcpy(c.psk, conf.password, sizeof conf.password);
+    c.psk[sizeof conf.password] = '\0';
+}
+
 /* CRC-16/CCITT-FALSE, same as firmware/src/crc16.c. */
 uint16_t crc16(const uint8_t *d, size_t n, uint16_t crc = 0xFFFF)
 {
@@ -226,10 +257,13 @@ void accept_connections()
         log_client = log_server.accept();
         log_client.setTimeout(kTcpWriteTimeoutMs); /* backstop; logf() already checks for room */
         log_dropped = 0;
-        logf("log connected; wifi=%s bssid=%s channel=%d rssi=%d dBm sleep=%d phy=%d ip=%s client=%s", WiFi.SSID().c_str(),
-             WiFi.BSSIDstr().c_str(), WiFi.channel(), WiFi.RSSI(), static_cast<int>(WiFi.getSleepMode()),
-             static_cast<int>(WiFi.getPhyMode()),
-             WiFi.localIP().toString().c_str(), client_active ? client.remoteIP().toString().c_str() : "-");
+        Credentials cred;
+        get_credentials(cred);
+        char bssid[18], ip[16], peer[16];
+        logf("log connected; wifi=%s bssid=%s channel=%d rssi=%d dBm sleep=%d phy=%d ip=%s client=%s", cred.ssid,
+             mac_str(WiFi.BSSID(), bssid), WiFi.channel(), WiFi.RSSI(), static_cast<int>(WiFi.getSleepMode()),
+             static_cast<int>(WiFi.getPhyMode()), ip_str(WiFi.localIP(), ip),
+             client_active ? ip_str(client.remoteIP(), peer) : "-");
     }
     if (server.hasClient()) {
         if (pending_active) {
@@ -240,7 +274,8 @@ void accept_connections()
         pending.setNoDelay(true);
         pending_len = 0;
         pending_since_ms = millis();
-        logf("candidate client %s", pending.remoteIP().toString().c_str());
+        char ip[16];
+        logf("candidate client %s", ip_str(pending.remoteIP(), ip));
     }
 }
 
@@ -264,8 +299,9 @@ void handle_pending()
         logf("candidate rejected: invalid HELLO or token");
         drop_pending();
     } else if (ok > 0) {
+        char ip[16];
         if (client_active) {
-            logf("previous client %s closed", client.remoteIP().toString().c_str());
+            logf("previous client %s closed", ip_str(client.remoteIP(), ip));
             drop_client();
         }
         client = pending;
@@ -275,7 +311,7 @@ void handle_pending()
         pending = WiFiClient();
         pending_active = false;
         Serial.write(pending_buf, pending_len); /* HELLO (and anything that followed it) to the STM32 */
-        logf("client authenticated: %s", client.remoteIP().toString().c_str());
+        logf("client authenticated: %s", ip_str(client.remoteIP(), ip));
     }
 }
 
@@ -368,13 +404,16 @@ void wifi_watchdog()
 
 void roam_scan_done(int n)
 {
-    const String ssid = WiFi.SSID();
+    Credentials cred;
+    get_credentials(cred);
+    const size_t ssid_len = strlen(cred.ssid);
     const int32_t cur = WiFi.RSSI();
     const uint8_t *cur_bssid = WiFi.BSSID();
     int best = -1;
     for (int i = 0; i < n; i++) {
-        if (WiFi.SSID(i) == ssid && memcmp(WiFi.BSSID(i), cur_bssid, 6) != 0
-            && (best < 0 || WiFi.RSSI(i) > WiFi.RSSI(best))) {
+        const bss_info *ap = WiFi.getScanInfoByIndex(i);
+        if (ap && ap->ssid_len == ssid_len && memcmp(ap->ssid, cred.ssid, ssid_len) == 0
+            && memcmp(ap->bssid, cur_bssid, 6) != 0 && (best < 0 || ap->rssi > WiFi.RSSI(best))) {
             best = i;
         }
     }
@@ -396,8 +435,10 @@ void roam_tick()
         record_event(kEvRoam, static_cast<uint8_t>(-roam.rssi), 0);
         /* persistent(false) is required: a persistent begin(…, channel, bssid) corrupted the Wi-Fi
          * credentials in flash and every later boot failed to connect until they were erased and re-entered. */
+        Credentials cred;
+        get_credentials(cred);
         WiFi.persistent(false);
-        WiFi.begin(WiFi.SSID().c_str(), WiFi.psk().c_str(), roam.channel, roam.bssid);
+        WiFi.begin(cred.ssid, cred.psk, roam.channel, roam.bssid);
         WiFi.persistent(true);
         roam.weak_since_ms = 0;
         return;
@@ -424,10 +465,10 @@ void roam_tick()
 
 void reply_status()
 {
-    char b[512];
+    char b[512], bssid[18];
     int n = snprintf(b, sizeof b, "uptime=%us reset=%s wd_restart=%u wd_last_outage=%us disconnects=%u ap=%s ch=%d rssi=%d heap=%u events=",
-                     static_cast<uint32_t>(millis() / 1000), ESP.getResetReason().c_str(), rtc.watchdog_restarts, rtc.last_outage_s,
-                     wifi_disconnects, WiFi.BSSIDstr().c_str(), WiFi.channel(), WiFi.RSSI(), ESP.getFreeHeap());
+                     static_cast<uint32_t>(millis() / 1000), reset_reason, rtc.watchdog_restarts, rtc.last_outage_s,
+                     wifi_disconnects, mac_str(WiFi.BSSID(), bssid), WiFi.channel(), WiFi.RSSI(), ESP.getFreeHeap());
     const size_t cnt = sizeof wifi_events / sizeof wifi_events[0];
     for (size_t i = 0; i < cnt && n > 0 && static_cast<size_t>(n) < sizeof b; i++) {
         const WifiEvent &e = wifi_events[(wifi_event_next + i) % cnt];
@@ -451,6 +492,7 @@ void setup()
     Serial.setRxBufferSize(2048);
     Serial.begin(kBaud);
     Serial.swap(); /* keep ROM boot messages and USB-serial traffic away from the STM32 */
+    strlcpy(reset_reason, ESP.getResetReason().c_str(), sizeof reset_reason);
     pinMode(kFlashButtonPin, INPUT_PULLUP);
     delay(20);
     send_status(kWifiConnecting);
