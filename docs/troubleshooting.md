@@ -44,9 +44,10 @@ charge-only.
 **`deskdeck.local` does not resolve.** On some mesh systems (seen on TP-Link Deco) the ESP8266's
 multicast mDNS replies are never forwarded to the Mac, so the macOS system resolver fails.
 `host/deskdeck/mdns.py` sends a legacy unicast query (RFC 6762 §6.7) instead, which gets a unicast
-reply and works there. The last good IP is cached in `~/Library/Caches/deskdeck/device_ip` (dropped
-again if that address stops completing the HELLO handshake, e.g. after the DHCP server hands it to
-another host), and you can set a fixed `ip` in `config.toml` (give the ESP a DHCP reservation).
+reply and works there. The last good IP is cached in `~/Library/Caches/deskdeck/device_ip`. If that
+address stops answering, mDNS is tried and a device found elsewhere replaces the cache. You can also
+set a fixed `ip` in `config.toml` (give the ESP a DHCP reservation); it is then used on its own,
+without mDNS.
 
 **The Mac cannot reach the device at all.** Guest networks are usually isolated from the main network.
 Put the ESP on the same network as the Mac (IoT networks are often fine, but check). To change Wi-Fi,
