@@ -64,4 +64,7 @@ void link_poll(link_handler_t handler, uint32_t max_frames);
 void link_credit_tick(uint32_t now_ms);
 
 void link_send(uint8_t type, const void *payload, uint16_t len);
+/* Sends a LOG frame. At most 4 per second: the excess is dropped and counted, and link_log_tick
+ * reports the count once the second is over. */
 void link_log(const char *text);
+void link_log_tick(uint32_t now_ms);
