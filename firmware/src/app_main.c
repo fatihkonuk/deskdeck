@@ -69,7 +69,7 @@ static void on_frame(uint8_t type, const link_span_t *p)
         }
         s_connected = true;
         s_last_rx_ms = now;
-        blit_end(); /* drop any half-finished blit */
+        blit_reset(); /* drop any half-finished blit */
         send_hello_ack(); /* before drawing, so the buffer starts filling while the host waits */
         display_init();   /* ~0.5 s; incoming data waits in the DMA buffer (window < buffer) */
         ui_show_connected();
@@ -82,9 +82,8 @@ static void on_frame(uint8_t type, const link_span_t *p)
 
     switch (type) {
     case MSG_BLIT_BEGIN:
-        if (len == 8) {
-            log_if(blit_begin(link_span_u16(p, 0), link_span_u16(p, 2), link_span_u16(p, 4), link_span_u16(p, 6)));
-        }
+        log_if(len == 8 ? blit_begin(link_span_u16(p, 0), link_span_u16(p, 2), link_span_u16(p, 4), link_span_u16(p, 6))
+                        : blit_abort("blit: malformed BEGIN"));
         break;
     case MSG_BLIT_DATA:
         log_if(blit_data(p));

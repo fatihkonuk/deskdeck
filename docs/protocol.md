@@ -63,10 +63,12 @@ press.
 Frames that arrive before HELLO are silently dropped. The host notices this as "CREDIT is not
 advancing" (see below) and sends HELLO again. The same mechanism recovers the session after an MCU reset.
 
-A blit the MCU cannot carry out is reported with a single LOG: rectangle off screen, BLIT_DATA without
-BLIT_BEGIN (e.g. BEGIN lost to a CRC error), odd length, or more data than the rectangle. The remaining
-BLIT_DATA and the BLIT_END of that blit are then dropped silently. A blit that is still short of pixels at
-BLIT_END is reported there.
+A blit the MCU cannot carry out is reported with a single LOG: malformed BLIT_BEGIN, rectangle off
+screen, BLIT_DATA without BLIT_BEGIN (e.g. BEGIN lost to a CRC error), odd length, or more data than
+the rectangle. The remaining BLIT_DATA and the BLIT_END of that blit are then dropped silently. A blit
+that is still short of pixels at BLIT_END is reported there, and so is a BLIT_END with no blit in
+progress. Frames carry no sequence number, so if a blit's END *and* the next blit's BEGIN are both lost,
+the second blit cannot be told apart from the first and goes unreported.
 
 ## Flow control (byte-based credit)
 
