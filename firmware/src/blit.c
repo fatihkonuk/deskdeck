@@ -13,11 +13,21 @@ static struct {
     uint32_t pos; /* pixels written */
 } s_blit;
 
+void blit_reset(void)
+{
+    s_blit.state = BLIT_IDLE;
+}
+
+const char *blit_abort(const char *reason)
+{
+    s_blit.state = BLIT_DISCARD;
+    return reason;
+}
+
 const char *blit_begin(uint16_t x, uint16_t y, uint16_t w, uint16_t h)
 {
     if (w == 0 || h == 0 || x + w > lcd_width() || y + h > lcd_height()) {
-        s_blit.state = BLIT_DISCARD;
-        return "blit: rectangle off screen";
+        return blit_abort("blit: rectangle off screen");
     }
     s_blit = (typeof(s_blit)){ .state = BLIT_ACTIVE, .x = x, .y = y, .w = w, .h = h };
     return NULL;
@@ -44,19 +54,16 @@ const char *blit_data(const link_span_t *data)
         return NULL; /* already reported */
     }
     if (s_blit.state == BLIT_IDLE) {
-        s_blit.state = BLIT_DISCARD; /* e.g. BEGIN lost to a CRC error: report once, drop until END */
-        return "blit: DATA without BEGIN";
+        return blit_abort("blit: DATA without BEGIN"); /* e.g. BEGIN lost to a CRC error */
     }
     if (len & 1u) {
-        s_blit.state = BLIT_DISCARD;
-        return "blit: odd-length DATA";
+        return blit_abort("blit: odd-length DATA");
     }
 
     const uint32_t total = (uint32_t)s_blit.w * s_blit.h;
     uint32_t pixels = len / 2u;
     if (s_blit.pos + pixels > total) {
-        s_blit.state = BLIT_DISCARD;
-        return "blit: more data than the rectangle";
+        return blit_abort("blit: more data than the rectangle");
     }
 
     uint16_t off = 0;
