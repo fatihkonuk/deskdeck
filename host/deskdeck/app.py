@@ -92,7 +92,8 @@ class App:
                 await self._draw_line(link, line, drawn)
             drawn["text"] = text_key
         if drawn.get("cover") != (np.artwork_key, np.empty):
-            await blit(link, layout.COVER, render.cover(np))
+            # resampling large artwork takes ~20 ms (1200×1200): keep it off the event loop
+            await blit(link, layout.COVER, await asyncio.to_thread(render.cover, np))
             drawn["cover"] = (np.artwork_key, np.empty)
         if song_changed and "grid" in drawn:
             log.info("track: %s — %s | screen updated after %.2f s", np.title, np.artist,

@@ -42,9 +42,7 @@ class NowPlaying:
         return max(0.0, min(e, self.duration_s)) if self.duration_s else max(0.0, e)
 
 
-def _to_state(p: dict) -> NowPlaying:
-    art = p.get("artworkData")
-    artwork = base64.b64decode(art) if art else None
+def _to_state(p: dict, artwork: bytes | None, artwork_key: str) -> NowPlaying:
     return NowPlaying(
         title=p.get("title") or "",
         artist=p.get("artist") or "",
@@ -55,7 +53,7 @@ def _to_state(p: dict) -> NowPlaying:
         rate=float(p.get("playbackRate") or 0.0),
         playing=bool(p.get("playing")),
         artwork=artwork,
-        artwork_key=hashlib.sha1(artwork).hexdigest() if artwork else "",
+        artwork_key=artwork_key,
     )
 
 
@@ -67,6 +65,8 @@ class Watcher:
         self.changed = asyncio.Event()
         self.changed_at = time.monotonic()  # arrival time of the last update (latency measurement)
         self._payload: dict = {}
+        self._artwork_src: str | None = None  # the base64 text that _artwork was decoded from
+        self._artwork: tuple[bytes | None, str] = (None, "")
 
     def _apply(self, line: bytes) -> None:
         msg = json.loads(line)
@@ -81,9 +81,20 @@ class Watcher:
                     self._payload[k] = v
         else:
             self._payload = dict(payload)
-        self.state = _to_state(self._payload)
+        self.state = _to_state(self._payload, *self._decode_artwork())
         self.changed_at = time.monotonic()
         self.changed.set()
+
+    def _decode_artwork(self) -> tuple[bytes | None, str]:
+        """Decodes and hashes the artwork only when it changed. The base64 text is a few hundred KB,
+        and most updates (play/pause, position) are diffs that leave it untouched: the merged payload
+        then still holds the same string object, so the comparison is a pointer check."""
+        src = self._payload.get("artworkData")
+        if src != self._artwork_src:
+            data = base64.b64decode(src) if src else None
+            self._artwork = (data, hashlib.sha1(data).hexdigest() if data else "")
+            self._artwork_src = src
+        return self._artwork
 
     async def run(self) -> None:
         while True:
