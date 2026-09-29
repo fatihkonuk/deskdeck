@@ -60,15 +60,20 @@ press.
 
 1. The host sends HELLO and waits for HELLO_ACK (3 s). It sends nothing else in the meantime.
 2. The MCU sends HELLO_ACK, re-initialises the display, clears the screen and draws the button frames.
-   It resets the consumed-byte counter; the bytes of HELLO itself are not counted.
+   It resets the consumed-byte counter; the bytes of HELLO itself are not counted. If the `proto`
+   field differs from its own version, the host refuses the session and logs both versions; it
+   also splits BLIT_DATA at the `max payload` the MCU announces.
 3. The host redraws the whole screen (cover, text, button icons, PROGRESS).
 4. The host sends PING once a second. If the MCU receives no valid frame for **6 s** (longer than the
    host's 5 s credit stall timeout, so a Wi-Fi gap the host rides out does not end the session) it shows the
    "not connected" screen, ignores everything until the next HELLO and stops sending CREDIT.
 5. The MCU sends `LOG "boot"` at power-up.
 
-Frames that arrive before HELLO are silently dropped. The host notices this as "CREDIT is not
-advancing" (see below) and sends HELLO again. The same mechanism recovers the session after an MCU reset.
+Frames that arrive before HELLO are silently dropped, and no CREDIT is sent for them. The host notices
+that CREDIT stops advancing, gives up after 5 s and reconnects: a new TCP connection with a new HELLO
+(the bridge resynchronises the parser in between, see above). The same mechanism recovers the session
+after an MCU reset. The wired test tool (`deskdeck-wiretest` without `--wifi`) does not reconnect; it
+reports the stall and exits.
 
 A blit the MCU cannot carry out is reported with a single LOG: rectangle off screen, BLIT_DATA without
 BLIT_BEGIN (e.g. BEGIN lost to a CRC error), or more data than the rectangle. The remaining BLIT_DATA and the BLIT_END of that blit are then dropped silently. A blit
