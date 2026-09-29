@@ -124,6 +124,8 @@ void record_event(uint8_t kind, uint8_t reason, uint32_t outage_ms)
     wifi_event_next = (wifi_event_next + 1) % (sizeof wifi_events / sizeof wifi_events[0]);
 }
 
+void logf(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+
 void logf(const char *fmt, ...)
 {
     if (!log_client.connected()) {
@@ -393,7 +395,7 @@ void diag_tick(uint32_t loop_us)
     if (millis() - diag.last_ms < 5000) {
         return;
     }
-    logf("tcp→uart %lu uart→tcp %lu short writes %lu | max: loop %lu us, tcp write %lu us, uart write %lu us | heap %u | rssi %d",
+    logf("tcp→uart %u uart→tcp %u short writes %u | max: loop %u us, tcp write %u us, uart write %u us | heap %u | rssi %d",
          diag.tcp_to_uart, diag.uart_to_tcp, diag.short_writes, diag.max_loop_us, diag.max_tcp_write_us,
          diag.max_uart_write_us, ESP.getFreeHeap(), WiFi.RSSI());
     diag.max_loop_us = diag.max_tcp_write_us = diag.max_uart_write_us = 0;
