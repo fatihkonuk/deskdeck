@@ -49,7 +49,7 @@ EOF
 
 case "${1:-}" in
 install)
-    (cd "$HOST_DIR" && uv sync --quiet)
+    (cd "$HOST_DIR" && uv sync --quiet --no-dev)  # the service needs no test tools
     launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
     write_plist
     launchctl bootstrap "$DOMAIN" "$PLIST"
