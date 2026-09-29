@@ -40,7 +40,7 @@ def test_write_error_is_reported_as_link_error():
 def test_hello_write_error_is_reported_as_link_error():
     async def main():
         link = Link(asyncio.StreamReader(), ResetWriter())
-        with pytest.raises(LinkError, match="reset by peer"):
+        with pytest.raises(LinkError, match="reset by peer during HELLO.*token"):
             await link.hello(b"token")
         link.failed.exception()  # retrieved; avoids a "never retrieved" warning
 
