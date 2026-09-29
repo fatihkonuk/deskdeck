@@ -44,7 +44,10 @@ class App:
         self._config_path = config_path
         self._config_mtime = config_path.stat().st_mtime
         self.pages = config.load_pages(config_path)
-        self.page = 0
+        self.page = 0  # the page to show; changes as soon as a swipe arrives
+        # The page whose buttons are on screen, None while the grid is being redrawn. Taps act on this,
+        # not on self.page: right after a swipe the old icons are still showing.
+        self._shown: config.Page | None = None
 
     def _reload_pages(self) -> None:
         """Reloads the pages if config.toml changed; keeps the old ones if the new file is invalid."""
@@ -83,6 +86,7 @@ class App:
             # A press held while the link dropped never gets its RELEASE; the MCU also forgets the
             # touch when it goes offline or receives a new HELLO.
             self._stop_repeat()
+            self._shown = None
 
     async def _draw(self, link: Link, np: NowPlaying, now: float, drawn: dict) -> None:
         text_key = (np.title, np.artist, np.album)
@@ -117,6 +121,7 @@ class App:
         if drawn.get("grid") != (self.page, page):
             drawn["grid"] = (self.page, page)
             drawn.pop("play_icon", None)
+            self._shown = None  # old and new icons are mixed until the loop below is done
             for i in range(layout.BUTTON_COUNT):
                 await link.send(p.fill(*layout.icon_rect(i), 0))
             cells = await asyncio.to_thread(lambda: [render.cell(s) if s and not _is_playpause(s) else ()
@@ -126,6 +131,7 @@ class App:
                 for dx, dy, img in parts:
                     await blit(link, (x + dx, y + dy, img.width, img.height), img)
             await blit(link, layout.PAGE_DOTS, render.page_dots(len(self.pages), self.page))
+            self._shown = page
         play_icon = "pause" if np.playing else "play"
         if drawn.get("play_icon") != play_icon:
             for i, spec in enumerate(page):
@@ -174,7 +180,11 @@ class App:
         if ev.event == p.RELEASE and self._repeat:  # the long press already repeated the action
             self._stop_repeat()
             return
-        spec = self.pages[self.page][ev.index] if ev.index < layout.BUTTON_COUNT else None
+        if self._shown is None:
+            if ev.event == p.RELEASE:
+                log.info("tap ignored: the page is being redrawn")
+            return
+        spec = self._shown[ev.index] if ev.index < layout.BUTTON_COUNT else None
         if spec is None:
             return
         if ev.event == p.LONG and spec.action == "media" and spec.arg.startswith("vol_"):

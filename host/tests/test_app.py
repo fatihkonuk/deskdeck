@@ -41,6 +41,7 @@ def make_app(config_path: Path) -> app_module.App:
         pass
 
     app._draw = draw  # the screen is not under test here
+    app._shown = app.pages[0]  # as if the first page had been drawn
     return app
 
 
@@ -204,7 +205,8 @@ def test_release_stops_repeat_when_cell_was_emptied(config_path, performed):
         app.on_event(p.Button(0, vol, p.PRESS))
         app.on_event(p.Button(0, vol, p.LONG))
         await asyncio.sleep(0.03)
-        app.pages = (tuple(None for _ in app.pages[0]),)  # config reload emptied the page
+        app.pages = (tuple(None for _ in app.pages[0]),)  # config reload emptied the page...
+        app._shown = app.pages[0]  # ...and it has been redrawn
         app.on_event(p.Button(0, vol, p.RELEASE))
         assert app._repeat is None
         count = len(performed)
@@ -227,3 +229,55 @@ def test_failed_action_is_logged(config_path, monkeypatch, caplog):
 
     asyncio.run(main())
     assert "action failed" in caplog.text
+
+
+def test_tap_right_after_swipe_acts_on_the_page_still_shown(config_path, performed):
+    async def main():
+        app = make_app(config_path)
+        old = app.pages[0]
+        index = next(i for i, spec in enumerate(old) if spec and spec.arg != app.pages[1][i].arg)
+        app.on_event(p.Button(0, 0xFF, p.SWIPE_LEFT))  # swipes carry no button index
+        assert app.page == 1  # the grid has not been redrawn yet
+        app.on_event(p.Button(0, index, p.RELEASE))
+        await asyncio.sleep(0.02)
+        assert performed == [old[index].arg]
+
+    asyncio.run(main())
+
+
+def test_taps_are_ignored_while_the_grid_is_redrawn(config_path, performed, monkeypatch):
+    """Between clearing the icon areas and drawing the last new icon, the screen shows neither page."""
+    events: dict[str, asyncio.Event] = {}
+
+    async def slow_blit(link, rect, img):
+        events["in_blit"].set()
+        await events["go"].wait()
+
+    class NullLink:
+        async def send(self, frame):
+            pass
+
+    monkeypatch.setattr(app_module, "blit", slow_blit)
+    monkeypatch.setattr(app_module.render, "cell", lambda spec: ((0, 0, _Img()),))
+    monkeypatch.setattr(app_module.render, "page_dots", lambda count, current: None)
+    monkeypatch.setattr(app_module.render, "icon", lambda kind: None)
+
+    async def main():
+        events.update(in_blit=asyncio.Event(), go=asyncio.Event())
+        app = app_module.App(config_path)
+        app._shown = app.pages[0]
+        app.page = 1
+        draw = asyncio.create_task(app._draw_grid(NullLink(), NowPlaying(), {"grid": (0, app.pages[0])}))
+        await events["in_blit"].wait()
+        app.on_event(p.Button(0, 0, p.RELEASE))
+        await asyncio.sleep(0.02)
+        assert performed == []
+        events["go"].set()
+        await draw
+        assert app._shown is app.pages[1]
+
+    asyncio.run(main())
+
+
+class _Img:
+    width = height = 1
