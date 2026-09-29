@@ -53,9 +53,12 @@ class Link:
         self._ready.clear()
         self._ack = asyncio.get_running_loop().create_future()
         self._writer.write(p.hello(token))  # not counted against the credit
-        await self._drain()
-        # Also wake on `failed`: the bridge closes the connection right away on a wrong token, and
-        # waiting out the timeout would only report a misleading "no HELLO_ACK".
+        try:
+            await self._drain()
+        except LinkError:
+            pass  # `failed` is set: reported below, with the token hint
+        # Also wake on `failed`: the bridge closes the connection right away on a wrong token (as a
+        # close or a reset), and waiting out the timeout would only report a misleading "no HELLO_ACK".
         await asyncio.wait({self._ack, self.failed}, timeout=HELLO_TIMEOUT_S,
                            return_when=asyncio.FIRST_COMPLETED)
         if not self._ack.done():
