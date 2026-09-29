@@ -87,3 +87,14 @@ def test_undecodable_artwork_falls_back_to_placeholder(monkeypatch, error):
     monkeypatch.setattr(render.Image, "open", open_)
     img = render.cover(NowPlaying(title="Song", artwork=b"artwork"))
     assert img.size == tuple(render.layout.COVER[2:])
+
+
+@pytest.mark.parametrize("count", range(2, 25))
+def test_current_page_is_always_visible(monkeypatch, count):
+    """With many pages the dots are packed closer and finally replaced by an "n/N" label; the current
+    page must stay visible (the highlighted dot is the only near-white pixel)."""
+    monkeypatch.setattr(render, "font", lambda size, weight="Regular": ImageFont.load_default(size))
+    for current in (0, count - 1):
+        img = render.page_dots(count, current).convert("L")
+        assert img.size == tuple(render.layout.PAGE_DOTS[2:])
+        assert img.getextrema()[1] > 200, (count, current)

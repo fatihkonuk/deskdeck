@@ -299,14 +299,33 @@ def _cell(spec: ButtonSpec) -> tuple[Part, ...]:
             ((w - text.width) // 2, top + GRAPHIC + LABEL_GAP, text))
 
 
+DOT_R = 3          # page dot radius
+DOT_STEP = 12      # distance between dot centres when there is room
+DOT_STEP_MIN = 8   # closest spacing that still leaves a visible gap between dots
+
+
+def _dot_step(count: int) -> float | None:
+    """Spacing that fits `count` dots into the indicator strip, or None if they do not fit."""
+    span = layout.PAGE_DOTS[2] - 2 * DOT_R - 2  # centre of the first dot to centre of the last
+    step = min(DOT_STEP, span / (count - 1))
+    return step if step >= DOT_STEP_MIN else None
+
+
 def page_dots(count: int, current: int) -> Image.Image:
-    """Right-aligned page dots; empty when there is only one page."""
+    """Right-aligned page dots, packed closer when there are many pages, or a "3/15" label once even
+    that does not fit. Empty when there is only one page."""
     _, _, w, h = layout.PAGE_DOTS
+    if count > 1 and _dot_step(count) is None:
+        f = font(12, "Medium")
+        label = f"{current + 1}/{count}"
+        img = Image.new("RGB", (w, h), BG)
+        ImageDraw.Draw(img).text((w - 2, h // 2), label, font=f, fill=FG, anchor="rm")
+        return img
     s = ICON_SUPERSAMPLE
     img = Image.new("RGB", (w * s, h * s), BG)
     if count > 1:
         d = ImageDraw.Draw(img)
-        step, r = 12 * s, 3 * s
+        step, r = _dot_step(count) * s, DOT_R * s
         for i in range(count):
             cx = w * s - r - 2 * s - (count - 1 - i) * step
             d.ellipse((cx - r, h * s / 2 - r, cx + r, h * s / 2 + r), fill=FG if i == current else FAINT)
