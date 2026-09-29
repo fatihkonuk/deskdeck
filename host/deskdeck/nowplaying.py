@@ -5,7 +5,6 @@ state (empty payload = nothing playing); diff=true carries only the changed fiel
 into the current state. If the tool exits it is restarted after a short delay."""
 import asyncio
 import base64
-import binascii
 import hashlib
 import json
 import logging
@@ -115,7 +114,7 @@ class Watcher:
             self._artwork_src = src
             try:
                 data = base64.b64decode(src) if src else None
-            except (binascii.Error, TypeError) as e:
+            except (ValueError, TypeError) as e:  # binascii.Error, or a str with non-ASCII characters
                 # Raising here would drop this update and every later diff too, since the bad text
                 # stays in the merged payload: show no artwork instead.
                 log.warning("could not decode artwork: %s", e)
