@@ -8,6 +8,7 @@ from PIL import Image, ImageFont
 
 from deskdeck import render
 from deskdeck.config import ButtonSpec
+from deskdeck.nowplaying import NowPlaying
 
 
 def png(size: int = 64) -> bytes:
@@ -74,3 +75,15 @@ def test_corrupt_cached_app_icon_falls_back(tmp_path, monkeypatch):
     cached.write_bytes(png()[:60])
     monkeypatch.setattr(render, "app_icon", lambda name: Image.open(cached))
     assert render._graphic(ButtonSpec("app", "Safari"), 44) is None
+
+
+@pytest.mark.parametrize("error", [Image.DecompressionBombError("too many pixels"), ValueError("Decompressed Data Too Large")])
+def test_undecodable_artwork_falls_back_to_placeholder(monkeypatch, error):
+    monkeypatch.setattr(render, "font", lambda size, weight="Regular": ImageFont.load_default(size))
+
+    def open_(fp, *args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(render.Image, "open", open_)
+    img = render.cover(NowPlaying(title="Song", artwork=b"artwork"))
+    assert img.size == tuple(render.layout.COVER[2:])

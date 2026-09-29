@@ -118,8 +118,11 @@ def cover(np: NowPlaying) -> Image.Image:
     if np.artwork:
         try:
             return ImageOps.fit(Image.open(io.BytesIO(np.artwork)).convert("RGB"), size, Image.LANCZOS)
-        except OSError as e:
-            log.warning("could not open artwork: %s", e)
+        except Exception as e:  # noqa: BLE001
+            # Artwork is untrusted data, and Pillow's decoders raise many types besides OSError
+            # (DecompressionBombError, ValueError, SyntaxError, ...). Letting one escape would fail the
+            # session and reconnect in a loop for as long as the track plays.
+            log.warning("could not open artwork: %s: %s", type(e).__name__, e)
     # No artwork: dark square with a note in the middle
     img = Image.new("RGB", size, (28, 28, 34))
     d = ImageDraw.Draw(img)
